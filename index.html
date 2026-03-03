@@ -6,6 +6,7 @@
 <title>Colorado Foreclosure Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <style>
 /* ═══════════════════════════════════════════
    CSS VARIABLES & RESET
@@ -246,13 +247,37 @@ input, select { font-family: var(--font-body); }
   transition: border-color var(--transition);
   outline: none;
 }
+.filter-bar input[type="date"] {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  transition: border-color var(--transition);
+  outline: none;
+  font-family: var(--font-body);
+}
+.filter-bar input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
 .filter-bar input[type="text"]:focus,
-.filter-bar select:focus {
+.filter-bar select:focus,
+.filter-bar input[type="date"]:focus {
   border-color: var(--accent-blue);
 }
 .filter-bar input[type="text"] { flex: 1; min-width: 180px; }
 .filter-bar select { min-width: 130px; }
 .filter-bar select option { background: var(--bg-surface); }
+.filter-label {
+  font-size: 0.72rem; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  font-weight: 500; white-space: nowrap;
+}
+.filter-sep {
+  color: var(--text-muted); font-size: 0.8rem;
+}
 .result-count {
   font-size: 0.8rem; color: var(--text-muted);
   margin-left: auto; white-space: nowrap;
@@ -412,6 +437,63 @@ td.address-cell {
 }
 
 /* ═══════════════════════════════════════════
+   MAP
+   ═══════════════════════════════════════════ */
+#map-container {
+  height: 500px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+.leaflet-popup-content-wrapper {
+  background: var(--bg-raised) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-mid) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+.leaflet-popup-tip { background: var(--bg-raised) !important; }
+.leaflet-popup-content {
+  font-family: var(--font-body) !important;
+  font-size: 0.85rem !important;
+  line-height: 1.5 !important;
+  margin: 12px 16px !important;
+}
+.leaflet-popup-content .popup-title {
+  font-weight: 600; font-size: 0.9rem;
+  margin-bottom: 6px;
+}
+.leaflet-popup-content .popup-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 2px 0; font-size: 0.8rem;
+}
+.leaflet-popup-content .popup-label { color: var(--text-muted); }
+.leaflet-popup-content .popup-value { color: var(--text-primary); font-weight: 500; }
+.leaflet-popup-close-button { color: var(--text-muted) !important; }
+.leaflet-control-zoom a {
+  background: var(--bg-raised) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-mid) !important;
+}
+.leaflet-control-attribution {
+  background: rgba(10,10,15,0.8) !important;
+  color: var(--text-muted) !important;
+  font-size: 0.65rem !important;
+}
+.leaflet-control-attribution a { color: var(--accent-blue) !important; }
+/* Dark map tiles filter */
+.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(1.1) saturate(0.3); }
+.map-legend {
+  display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap;
+  font-size: 0.8rem; color: var(--text-muted);
+}
+.map-legend-item { display: flex; align-items: center; gap: 6px; }
+.map-legend-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.3);
+}
+
+/* ═══════════════════════════════════════════
    EMPTY STATE
    ═══════════════════════════════════════════ */
 .empty-state {
@@ -454,8 +536,12 @@ td.address-cell {
   .filter-bar { gap: 8px; }
   .filter-bar input[type="text"] { min-width: 0; width: 100%; }
   .filter-bar select { flex: 1; min-width: 0; }
+  .filter-bar input[type="date"] { flex: 1; min-width: 0; }
+  .filter-label { display: none; }
+  .filter-sep { display: none; }
   .result-count { margin-left: 0; width: 100%; text-align: center; }
   .chart-grid { grid-template-columns: 1fr; }
+  #map-container { height: 380px; }
   .detail-panel { width: 100vw; }
 
   /* Mobile card view instead of table */
@@ -568,6 +654,7 @@ td.address-cell {
   <!-- Tabs -->
   <div class="tab-bar" role="tablist">
     <button class="tab-btn active" role="tab" data-tab="dashboard">Dashboard</button>
+    <button class="tab-btn" role="tab" data-tab="map">Map</button>
     <button class="tab-btn" role="tab" data-tab="filings">All Filings</button>
   </div>
 
@@ -586,6 +673,26 @@ td.address-cell {
         <canvas id="chart-amounts"></canvas>
         </div>
       </div>
+      <div class="chart-card" style="grid-column: 1 / -1;">
+        <h3>Estimated Foreclosure Filings Over Time</h3>
+        <div class="chart-container" style="height: 260px;">
+        <canvas id="chart-timeline"></canvas>
+        </div>
+        <div style="font-size:0.7rem; color:var(--text-muted); margin-top:8px;">
+          NED dates estimated from sale dates using Colorado statute (sale date − 110 to 125 days). Actual filing dates may vary by ±7 days.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Map Tab -->
+  <div class="tab-panel" id="panel-map">
+    <div id="map-container"></div>
+    <div class="map-legend">
+      <div class="map-legend-item"><div class="map-legend-dot" style="background:#22c55e"></div> Sold</div>
+      <div class="map-legend-item"><div class="map-legend-dot" style="background:#f0a030"></div> Continued</div>
+      <div class="map-legend-item"><div class="map-legend-dot" style="background:#4d8eff"></div> Scheduled</div>
+      <div class="map-legend-item"><div class="map-legend-dot" style="background:#a78bfa"></div> Withdrawn</div>
     </div>
   </div>
 
@@ -608,6 +715,10 @@ td.address-cell {
         <option value="sales_results">Sales Results</option>
         <option value="publicsearch">Public Search</option>
       </select>
+      <span class="filter-label">Date:</span>
+      <input type="date" id="filter-date-from" title="From date">
+      <span class="filter-sep">–</span>
+      <input type="date" id="filter-date-to" title="To date">
       <span class="result-count" id="result-count"></span>
     </div>
 
@@ -620,12 +731,17 @@ td.address-cell {
             <th data-sort="borrower_name">Borrower <span class="sort-arrow">▲</span></th>
             <th data-sort="property_address">Address <span class="sort-arrow">▲</span></th>
             <th data-sort="total_due">Amount Due <span class="sort-arrow">▲</span></th>
+            <th data-sort="ned_recorded_date">Est. NED Date <span class="sort-arrow">▲</span></th>
             <th data-sort="scheduled_sale_date">Sale Date <span class="sort-arrow">▲</span></th>
             <th data-sort="status">Status <span class="sort-arrow">▲</span></th>
           </tr>
         </thead>
         <tbody id="filings-body"></tbody>
       </table>
+    </div>
+    <div style="font-size:0.7rem; color:var(--text-muted); margin-top:8px; padding:0 4px;">
+      "Est. NED Date" = estimated Notice of Election &amp; Demand filing date, calculated as sale date − 117 days per Colorado statute (CRS §38-38-108). Actual filing dates may differ by ±7 days.
+      Date filter applies to the estimated NED date column.
     </div>
   </div>
 
@@ -648,6 +764,7 @@ td.address-cell {
 </footer>
 
 <!-- Chart.js from CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
 <!-- APPLICATION JAVASCRIPT -->
@@ -766,6 +883,8 @@ function applyFilters() {
   const query = document.getElementById('filter-search').value.toLowerCase();
   const status = document.getElementById('filter-status').value;
   const source = document.getElementById('filter-source').value;
+  const dateFrom = document.getElementById('filter-date-from').value; // 'YYYY-MM-DD' or ''
+  const dateTo = document.getElementById('filter-date-to').value;
 
   filteredRecords = allRecords.filter(r => {
     if (status && r.status !== status) return false;
@@ -774,6 +893,13 @@ function applyFilters() {
       const hay = [r.foreclosure_number, r.borrower_name, r.property_address, r.attorney]
         .filter(Boolean).join(' ').toLowerCase();
       if (!hay.includes(query)) return false;
+    }
+    // Date range filter on ned_recorded_date
+    if (dateFrom || dateTo) {
+      const ned = r.ned_recorded_date;
+      if (!ned) return false;
+      if (dateFrom && ned < dateFrom) return false;
+      if (dateTo && ned > dateTo) return false;
     }
     return true;
   });
@@ -804,19 +930,24 @@ function sortRecords() {
 function renderTable() {
   const tbody = document.getElementById('filings-body');
   if (filteredRecords.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">📋</div><p>No filings match your filters</p></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="icon">📋</div><p>No filings match your filters</p></div></td></tr>';
     return;
   }
-  tbody.innerHTML = filteredRecords.map(r => `
+  tbody.innerHTML = filteredRecords.map(r => {
+    const nedLabel = r.ned_recorded_date
+      ? (r.ned_estimated ? '~' + formatDate(r.ned_recorded_date) : formatDate(r.ned_recorded_date))
+      : '—';
+    return `
     <tr data-id="${r.id}" onclick="openDetail('${r.id}')">
       <td data-label="Case #"><span class="mono">${esc(r.foreclosure_number)}</span></td>
       <td data-label="Borrower">${esc(r.borrower_name || '—')}</td>
       <td data-label="Address" class="address-cell">${esc(r.property_address || '—')}</td>
       <td data-label="Amount Due"><span class="amount">${r.total_due ? formatCurrencyFull(r.total_due) : '—'}</span></td>
+      <td data-label="Est. NED Date">${nedLabel}</td>
       <td data-label="Sale Date">${formatDate(r.scheduled_sale_date)}</td>
       <td data-label="Status">${statusBadge(r.status)}</td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
 
 function statusBadge(status) {
@@ -871,7 +1002,7 @@ function openDetail(id) {
     },
     {
       title: 'Timeline', rows: [
-        ['NED Recorded', r.ned_recorded_date ? formatDate(r.ned_recorded_date) : null],
+        ['NED Recorded' + (r.ned_estimated ? ' (est.)' : ''), r.ned_recorded_date ? formatDate(r.ned_recorded_date) : null],
         ['First Publication', r.first_publication_date ? formatDate(r.first_publication_date) : null],
         ['Last Publication', r.last_publication_date ? formatDate(r.last_publication_date) : null],
         ['Scheduled Sale', r.scheduled_sale_date ? formatDate(r.scheduled_sale_date) : null],
@@ -916,10 +1047,12 @@ function closeDetail() {
    ═══════════════════════════════════════════ */
 let chartStatus = null;
 let chartAmounts = null;
+let chartTimeline = null;
 
 function renderCharts() {
   renderStatusChart();
   renderAmountsChart();
+  renderTimelineChart();
 }
 
 function renderStatusChart() {
@@ -1004,6 +1137,168 @@ function renderAmountsChart() {
   });
 }
 
+function renderTimelineChart() {
+  // Group by month using ned_recorded_date (estimated or actual)
+  const monthly = {};
+  allRecords.forEach(r => {
+    const ned = r.ned_recorded_date;
+    if (!ned) return;
+    const month = ned.substring(0, 7); // 'YYYY-MM'
+    monthly[month] = (monthly[month] || 0) + 1;
+  });
+
+  // Sort by month
+  const sortedMonths = Object.keys(monthly).sort();
+  if (sortedMonths.length === 0) return;
+
+  // Fill gaps (months with zero filings between first and last)
+  const allMonths = [];
+  const allCounts = [];
+  if (sortedMonths.length > 0) {
+    const [startY, startM] = sortedMonths[0].split('-').map(Number);
+    const [endY, endM] = sortedMonths[sortedMonths.length - 1].split('-').map(Number);
+    let y = startY, m = startM;
+    while (y < endY || (y === endY && m <= endM)) {
+      const key = y + '-' + String(m).padStart(2, '0');
+      allMonths.push(key);
+      allCounts.push(monthly[key] || 0);
+      m++;
+      if (m > 12) { m = 1; y++; }
+    }
+  }
+
+  const labels = allMonths.map(m => {
+    const [y, mo] = m.split('-');
+    const dt = new Date(parseInt(y), parseInt(mo) - 1);
+    return dt.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  });
+
+  if (chartTimeline) chartTimeline.destroy();
+  chartTimeline = new Chart(document.getElementById('chart-timeline'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Est. New Filings',
+        data: allCounts,
+        backgroundColor: '#a78bfa33',
+        borderColor: '#a78bfa',
+        borderWidth: 1.5,
+        borderRadius: 4,
+        barPercentage: 0.8,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: { color: '#9090a8', font: { family: 'Outfit', size: 11 }, boxWidth: 12, padding: 12 }
+        },
+        tooltip: {
+          callbacks: {
+            title: (items) => allMonths[items[0].dataIndex] || '',
+            label: (item) => item.raw + ' filing' + (item.raw !== 1 ? 's' : ''),
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#9090a8', font: { family: 'Outfit', size: 11 }, maxRotation: 45 },
+          grid: { display: false },
+          border: { color: '#2a2a3d' }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { color: '#9090a8', stepSize: 1, font: { family: 'Outfit', size: 11 } },
+          grid: { color: '#2a2a3d22' },
+          border: { color: '#2a2a3d' }
+        }
+      }
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════
+   MAP
+   ═══════════════════════════════════════════ */
+let leafletMap = null;
+let mapMarkers = [];
+
+function initMap() {
+  if (leafletMap) return;
+  leafletMap = L.map('map-container', {
+    center: [39.74, -104.95],
+    zoom: 11,
+    zoomControl: true,
+  });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19,
+  }).addTo(leafletMap);
+  renderMapMarkers();
+}
+
+function renderMapMarkers() {
+  if (!leafletMap) return;
+  // Clear existing
+  mapMarkers.forEach(m => leafletMap.removeLayer(m));
+  mapMarkers = [];
+
+  const statusColors = {
+    sold: '#22c55e', continued: '#f0a030',
+    scheduled: '#4d8eff', withdrawn: '#a78bfa', rrc: '#ef4444'
+  };
+
+  const geoRecords = allRecords.filter(r => r.latitude && r.longitude);
+  const bounds = [];
+
+  geoRecords.forEach(r => {
+    const color = statusColors[r.status] || '#606078';
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="
+        width:14px;height:14px;
+        background:${color};
+        border:2px solid rgba(255,255,255,0.4);
+        border-radius:50%;
+        box-shadow:0 1px 6px rgba(0,0,0,0.5);
+      "></div>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+    });
+
+    const addr = cleanAddressDisplay(r.property_address);
+    const popup = `
+      <div class="popup-title">${esc(r.foreclosure_number)}</div>
+      <div class="popup-row"><span class="popup-label">Borrower</span><span class="popup-value">${esc(r.borrower_name || '—')}</span></div>
+      <div class="popup-row"><span class="popup-label">Address</span><span class="popup-value">${esc(addr)}</span></div>
+      ${r.total_due ? `<div class="popup-row"><span class="popup-label">Amount Due</span><span class="popup-value" style="color:var(--accent-amber)">${formatCurrencyFull(r.total_due)}</span></div>` : ''}
+      ${r.scheduled_sale_date ? `<div class="popup-row"><span class="popup-label">Sale Date</span><span class="popup-value">${formatDate(r.scheduled_sale_date)}</span></div>` : ''}
+      <div class="popup-row"><span class="popup-label">Status</span><span class="popup-value">${statusBadge(r.status)}</span></div>
+    `;
+
+    const marker = L.marker([r.latitude, r.longitude], { icon })
+      .bindPopup(popup, { maxWidth: 280 })
+      .addTo(leafletMap);
+    mapMarkers.push(marker);
+    bounds.push([r.latitude, r.longitude]);
+  });
+
+  if (bounds.length > 0) {
+    leafletMap.fitBounds(bounds, { padding: [30, 30] });
+  }
+}
+
+function cleanAddressDisplay(addr) {
+  if (!addr) return '—';
+  // Simple cleanup for display: remove lender names after double spaces
+  return addr.replace(/\s{2,}.*$/, '').trim();
+}
+
 /* ═══════════════════════════════════════════
    TIMESTAMP
    ═══════════════════════════════════════════ */
@@ -1030,6 +1325,13 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+    // Initialize map when tab becomes visible (Leaflet needs visible container)
+    if (btn.dataset.tab === 'map') {
+      setTimeout(() => {
+        initMap();
+        if (leafletMap) leafletMap.invalidateSize();
+      }, 100);
+    }
   });
 });
 
@@ -1037,6 +1339,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 document.getElementById('filter-search').addEventListener('input', applyFilters);
 document.getElementById('filter-status').addEventListener('change', applyFilters);
 document.getElementById('filter-source').addEventListener('change', applyFilters);
+document.getElementById('filter-date-from').addEventListener('change', applyFilters);
+document.getElementById('filter-date-to').addEventListener('change', applyFilters);
 
 // Sort
 document.querySelectorAll('thead th[data-sort]').forEach(th => {
