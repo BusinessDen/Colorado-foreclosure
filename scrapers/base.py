@@ -66,6 +66,13 @@ class ForeclosureRecord:
     status: Optional[str] = None
     reception_number: Optional[str] = None
 
+    # Geolocation (populated by geocoder)
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+    # Computed fields
+    ned_estimated: Optional[bool] = None
+
     # Metadata
     scraped_at: Optional[str] = None
     source_url: Optional[str] = None
