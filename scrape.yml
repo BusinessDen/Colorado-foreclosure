@@ -1,0 +1,115 @@
+name: Colorado Foreclosure Tracker
+on:
+  schedule:
+    # 5am MST (Nov-Mar) = 12:00 UTC
+    # 5am MDT (Mar-Nov) = 11:00 UTC
+    - cron: '0 11 * * *'
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+jobs:
+  deploy-first:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if this is the right hour for current DST
+        id: dst_check
+        run: |
+          HOUR_MT=$(TZ=America/Denver date +%H)
+          echo "Mountain Time hour: $HOUR_MT"
+          if [ "$HOUR_MT" = "05" ]; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+          else
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Wrong hour for current DST - skipping"
+          fi
+      - name: Checkout repo
+        if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Pull latest
+        if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
+        run: git pull origin main
+      - name: Setup Pages
+        if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/configure-pages@v4
+      - name: Upload artifact
+        if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+      - name: Deploy to GitHub Pages
+        if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/deploy-pages@v4
+  scrape:
+    needs: deploy-first
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check DST
+        id: dst_check
+        run: |
+          HOUR_MT=$(TZ=America/Denver date +%H)
+          if [ "$HOUR_MT" = "05" ]; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+          else
+            echo "skip=true" >> $GITHUB_OUTPUT
+          fi
+      - name: Checkout repo
+        if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Pull latest
+        if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
+        run: git pull origin main
+      - name: Set up Python
+        if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
+        run: pip install requests pdfplumber
+      - name: Run scraper
+        if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
+        run: python3 scraper.py
+      - name: Commit and push data
+        if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git reset --soft origin/main
+          git add foreclosure-data.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Foreclosure data update $(date +%Y-%m-%d)"
+            git push --force
+          fi
+  deploy-after:
+    needs: scrape
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Pull latest data
+        run: git pull origin main
+      - name: Delete previous artifact
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: github-pages
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

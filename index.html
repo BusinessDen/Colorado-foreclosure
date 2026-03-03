@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Colorado Foreclosure Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════
+   CSS VARIABLES & RESET
+   ═══════════════════════════════════════════ */
+:root {
+  --bg-base: #0a0a0f;
+  --bg-raised: #12121a;
+  --bg-surface: #1a1a26;
+  --bg-hover: #222233;
+  --bg-active: #2a2a3d;
+  --border-subtle: #2a2a3d;
+  --border-mid: #3a3a52;
+  --text-primary: #e8e8f0;
+  --text-secondary: #9090a8;
+  --text-muted: #606078;
+  --accent-blue: #4d8eff;
+  --accent-blue-dim: #4d8eff22;
+  --accent-amber: #f0a030;
+  --accent-amber-dim: #f0a03022;
+  --accent-red: #ef4444;
+  --accent-red-dim: #ef444422;
+  --accent-green: #22c55e;
+  --accent-green-dim: #22c55e22;
+  --accent-purple: #a78bfa;
+  --accent-purple-dim: #a78bfa22;
+  --font-body: 'Outfit', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-card: 0 2px 12px rgba(0,0,0,0.4);
+  --shadow-popup: 0 8px 32px rgba(0,0,0,0.6);
+  --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; -webkit-text-size-adjust: 100%; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  line-height: 1.5;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+a { color: var(--accent-blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font-family: var(--font-body); cursor: pointer; }
+input, select { font-family: var(--font-body); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ═══════════════════════════════════════════
+   LOADING & ERROR STATES
+   ═══════════════════════════════════════════ */
+#loading-screen {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: var(--bg-base); z-index: 9999;
+  transition: opacity 0.4s ease;
+}
+#loading-screen.fade-out { opacity: 0; pointer-events: none; }
+.loading-spinner {
+  width: 40px; height: 40px;
+  border: 3px solid var(--border-subtle);
+  border-top-color: var(--accent-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { margin-top: 16px; color: var(--text-secondary); font-size: 0.9rem; }
+#error-banner {
+  display: none;
+  background: var(--accent-red-dim);
+  border: 1px solid var(--accent-red);
+  color: var(--text-primary);
+  padding: 12px 20px;
+  margin: 12px 20px 0;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+}
+
+/* ═══════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════ */
+.site-header {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border-subtle);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.header-inner {
+  max-width: 1400px; margin: 0 auto;
+  padding: 16px 24px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px;
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-icon {
+  width: 36px; height: 36px;
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 700; color: #fff;
+}
+.brand-text h1 {
+  font-size: 1.15rem; font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.brand-text .subtitle {
+  font-size: 0.75rem; color: var(--text-muted);
+  font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase;
+}
+.header-meta {
+  display: flex; align-items: center; gap: 16px;
+  font-size: 0.8rem; color: var(--text-secondary);
+}
+.pulse-dot {
+  width: 7px; height: 7px;
+  background: var(--accent-green);
+  border-radius: 50%;
+  display: inline-block;
+  animation: pulse 2s infinite;
+  margin-right: 6px;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ═══════════════════════════════════════════
+   MAIN LAYOUT
+   ═══════════════════════════════════════════ */
+.main-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px 24px 60px;
+}
+
+/* ═══════════════════════════════════════════
+   KPI CARDS
+   ═══════════════════════════════════════════ */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.kpi-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color var(--transition);
+}
+.kpi-card:hover { border-color: var(--border-mid); }
+.kpi-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+}
+.kpi-card.blue::before { background: var(--accent-blue); }
+.kpi-card.amber::before { background: var(--accent-amber); }
+.kpi-card.red::before { background: var(--accent-red); }
+.kpi-card.green::before { background: var(--accent-green); }
+.kpi-card.purple::before { background: var(--accent-purple); }
+.kpi-label {
+  font-size: 0.72rem; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  font-weight: 500; margin-bottom: 6px;
+}
+.kpi-value {
+  font-size: 1.7rem; font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: -0.03em;
+}
+.kpi-sub {
+  font-size: 0.75rem; color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* ═══════════════════════════════════════════
+   TABS
+   ═══════════════════════════════════════════ */
+.tab-bar {
+  display: flex; gap: 2px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  margin-bottom: 20px;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.tab-btn {
+  padding: 8px 20px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.tab-btn.active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ═══════════════════════════════════════════
+   FILTERS
+   ═══════════════════════════════════════════ */
+.filter-bar {
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap; margin-bottom: 16px;
+}
+.filter-bar input[type="text"],
+.filter-bar select {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  transition: border-color var(--transition);
+  outline: none;
+}
+.filter-bar input[type="text"]:focus,
+.filter-bar select:focus {
+  border-color: var(--accent-blue);
+}
+.filter-bar input[type="text"] { flex: 1; min-width: 180px; }
+.filter-bar select { min-width: 130px; }
+.filter-bar select option { background: var(--bg-surface); }
+.result-count {
+  font-size: 0.8rem; color: var(--text-muted);
+  margin-left: auto; white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════
+   TABLE
+   ═══════════════════════════════════════════ */
+.table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+thead th {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  position: sticky; top: 0; z-index: 2;
+}
+thead th:hover { color: var(--text-primary); }
+thead th .sort-arrow { margin-left: 4px; opacity: 0.4; font-size: 0.7rem; }
+thead th.sorted .sort-arrow { opacity: 1; color: var(--accent-blue); }
+tbody tr {
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background var(--transition);
+  cursor: pointer;
+}
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: var(--bg-hover); }
+tbody td {
+  padding: 10px 14px;
+  white-space: nowrap;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+td.address-cell {
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mono { font-family: var(--font-mono); font-size: 0.82rem; }
+.amount { font-family: var(--font-mono); color: var(--accent-amber); }
+
+/* Status badges */
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.badge-sold { background: var(--accent-green-dim); color: var(--accent-green); }
+.badge-continued { background: var(--accent-amber-dim); color: var(--accent-amber); }
+.badge-scheduled { background: var(--accent-blue-dim); color: var(--accent-blue); }
+.badge-withdrawn { background: var(--accent-purple-dim); color: var(--accent-purple); }
+.badge-rrc { background: var(--accent-red-dim); color: var(--accent-red); }
+
+/* ═══════════════════════════════════════════
+   DETAIL PANEL (Slide-in)
+   ═══════════════════════════════════════════ */
+.detail-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 200;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.detail-overlay.open { opacity: 1; pointer-events: auto; }
+.detail-panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: 480px; max-width: 100vw;
+  background: var(--bg-raised);
+  border-left: 1px solid var(--border-subtle);
+  z-index: 201;
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-y: auto;
+  box-shadow: var(--shadow-popup);
+}
+.detail-panel.open { transform: translateX(0); }
+.detail-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky; top: 0; z-index: 1;
+  background: var(--bg-raised);
+}
+.detail-header h2 { font-size: 1rem; font-weight: 600; }
+.detail-close {
+  background: none; border: none;
+  color: var(--text-secondary); font-size: 1.3rem;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition);
+}
+.detail-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+.detail-body { padding: 24px; }
+.detail-section { margin-bottom: 24px; }
+.detail-section-title {
+  font-size: 0.72rem; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  font-weight: 600; margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.detail-row {
+  display: flex; justify-content: space-between;
+  padding: 6px 0;
+  font-size: 0.85rem;
+}
+.detail-row .label { color: var(--text-secondary); }
+.detail-row .value { color: var(--text-primary); font-weight: 500; text-align: right; max-width: 60%; }
+
+/* ═══════════════════════════════════════════
+   CHART SECTION
+   ═══════════════════════════════════════════ */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.chart-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 20px;
+}
+.chart-card h3 {
+  font-size: 0.85rem; font-weight: 600;
+  margin-bottom: 16px;
+}
+canvas { width: 100% !important; }
+
+/* ═══════════════════════════════════════════
+   EMPTY STATE
+   ═══════════════════════════════════════════ */
+.empty-state {
+  text-align: center; padding: 60px 20px;
+  color: var(--text-muted);
+}
+.empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.5; }
+.empty-state p { font-size: 0.9rem; }
+
+/* ═══════════════════════════════════════════
+   FOOTER
+   ═══════════════════════════════════════════ */
+.site-footer {
+  max-width: 1400px; margin: 0 auto;
+  padding: 20px 24px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+}
+
+/* ═══════════════════════════════════════════
+   MOBILE RESPONSIVE
+   ═══════════════════════════════════════════ */
+@media (max-width: 768px) {
+  html { font-size: 14px; }
+  .header-inner { padding: 12px 16px; }
+  .brand-text h1 { font-size: 1rem; }
+  .header-meta { display: none; }
+  .main-container { padding: 14px 12px 40px; }
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .kpi-card { padding: 14px 16px; }
+  .kpi-value { font-size: 1.35rem; }
+  .tab-bar { width: 100%; }
+  .tab-btn { padding: 8px 14px; font-size: 0.8rem; flex: 1; text-align: center; }
+  .filter-bar { gap: 8px; }
+  .filter-bar input[type="text"] { min-width: 0; width: 100%; }
+  .filter-bar select { flex: 1; min-width: 0; }
+  .result-count { margin-left: 0; width: 100%; text-align: center; }
+  .chart-grid { grid-template-columns: 1fr; }
+  .detail-panel { width: 100vw; }
+
+  /* Mobile card view instead of table */
+  .table-wrapper { border: none; background: transparent; overflow: visible; }
+  table, thead, tbody, tr, th, td { display: block; }
+  thead { display: none; }
+  tbody tr {
+    background: var(--bg-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    margin-bottom: 10px;
+    padding: 14px 16px;
+    position: relative;
+  }
+  tbody td {
+    padding: 3px 0;
+    white-space: normal;
+    max-width: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  tbody td::before {
+    content: attr(data-label);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 500;
+    min-width: 90px;
+    flex-shrink: 0;
+  }
+  tbody td:first-child {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: 8px;
+  }
+  td.address-cell { white-space: normal; }
+  .site-footer { padding: 16px 12px; flex-direction: column; text-align: center; }
+}
+
+@media (max-width: 400px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+  .kpi-value { font-size: 1.5rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- Loading Screen -->
+<div id="loading-screen">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Loading foreclosure data…</div>
+</div>
+
+<!-- Error Banner -->
+<div id="error-banner"></div>
+
+<!-- Header -->
+<header class="site-header">
+  <div class="header-inner">
+    <div class="brand">
+      <div class="brand-icon">FC</div>
+      <div class="brand-text">
+        <h1>Colorado Foreclosure Tracker</h1>
+        <div class="subtitle">Public records · Updated daily</div>
+      </div>
+    </div>
+    <div class="header-meta">
+      <span><span class="pulse-dot"></span>Live data</span>
+      <span id="last-updated"></span>
+    </div>
+  </div>
+</header>
+
+<!-- Main Content -->
+<main class="main-container">
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid">
+    <div class="kpi-card blue">
+      <div class="kpi-label">Total Filings</div>
+      <div class="kpi-value" id="kpi-total">—</div>
+      <div class="kpi-sub" id="kpi-total-sub">across all counties</div>
+    </div>
+    <div class="kpi-card amber">
+      <div class="kpi-label">Continued</div>
+      <div class="kpi-value" id="kpi-continued">—</div>
+      <div class="kpi-sub">postponed auctions</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-label">Sold</div>
+      <div class="kpi-value" id="kpi-sold">—</div>
+      <div class="kpi-sub">completed sales</div>
+    </div>
+    <div class="kpi-card red">
+      <div class="kpi-label">Scheduled</div>
+      <div class="kpi-value" id="kpi-scheduled">—</div>
+      <div class="kpi-sub">upcoming auctions</div>
+    </div>
+    <div class="kpi-card purple">
+      <div class="kpi-label">Total Amount Due</div>
+      <div class="kpi-value" id="kpi-amount">—</div>
+      <div class="kpi-sub">aggregate principal</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tab-bar" role="tablist">
+    <button class="tab-btn active" role="tab" data-tab="dashboard">Dashboard</button>
+    <button class="tab-btn" role="tab" data-tab="filings">All Filings</button>
+  </div>
+
+  <!-- Dashboard Tab -->
+  <div class="tab-panel active" id="panel-dashboard">
+    <div class="chart-grid">
+      <div class="chart-card">
+        <h3>Status Breakdown</h3>
+        <canvas id="chart-status" height="220"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Amount Distribution</h3>
+        <canvas id="chart-amounts" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filings Tab -->
+  <div class="tab-panel" id="panel-filings">
+    <!-- Filters -->
+    <div class="filter-bar">
+      <input type="text" id="filter-search" placeholder="Search address, borrower, case #…">
+      <select id="filter-status">
+        <option value="">All Statuses</option>
+        <option value="sold">Sold</option>
+        <option value="continued">Continued</option>
+        <option value="scheduled">Scheduled</option>
+        <option value="withdrawn">Withdrawn</option>
+      </select>
+      <select id="filter-source">
+        <option value="">All Sources</option>
+        <option value="bidgrid">Bid Grid</option>
+        <option value="continuances">Continuances</option>
+        <option value="sales_results">Sales Results</option>
+        <option value="publicsearch">Public Search</option>
+      </select>
+      <span class="result-count" id="result-count"></span>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrapper">
+      <table id="filings-table">
+        <thead>
+          <tr>
+            <th data-sort="foreclosure_number">Case # <span class="sort-arrow">▲</span></th>
+            <th data-sort="borrower_name">Borrower <span class="sort-arrow">▲</span></th>
+            <th data-sort="property_address">Address <span class="sort-arrow">▲</span></th>
+            <th data-sort="total_due">Amount Due <span class="sort-arrow">▲</span></th>
+            <th data-sort="scheduled_sale_date">Sale Date <span class="sort-arrow">▲</span></th>
+            <th data-sort="status">Status <span class="sort-arrow">▲</span></th>
+          </tr>
+        </thead>
+        <tbody id="filings-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<!-- Detail Panel -->
+<div class="detail-overlay" id="detail-overlay"></div>
+<div class="detail-panel" id="detail-panel">
+  <div class="detail-header">
+    <h2 id="detail-title">Case Details</h2>
+    <button class="detail-close" id="detail-close" aria-label="Close">✕</button>
+  </div>
+  <div class="detail-body" id="detail-body"></div>
+</div>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <span>Data sourced from Denver County Public Trustee public records</span>
+  <span>Updated daily at 5:00 AM MT · No cost, no API keys</span>
+</footer>
+
+<!-- Chart.js from CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<!-- APPLICATION JAVASCRIPT -->
+<script>
+/* ═══════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════ */
+let allRecords = [];
+let filteredRecords = [];
+let sortCol = 'foreclosure_number';
+let sortAsc = true;
+
+/* ═══════════════════════════════════════════
+   DATA LOADING
+   ═══════════════════════════════════════════ */
+async function loadData() {
+  try {
+    const resp = await fetch('foreclosure-data.json?_=' + Date.now());
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    allRecords = await resp.json();
+    if (!Array.isArray(allRecords)) allRecords = [];
+    // Clean address data (some have lender names appended from PDF parsing)
+    allRecords.forEach(r => {
+      if (r.property_address) {
+        r.property_address = cleanAddress(r.property_address);
+      }
+    });
+    hideLoading();
+    renderAll();
+  } catch (err) {
+    console.error('Load error:', err);
+    showError('Could not load data. ' + err.message);
+    hideLoading();
+  }
+}
+
+function cleanAddress(addr) {
+  // Remove lender names that got appended during PDF parsing
+  const lenderPatterns = [
+    /\s+(AMERIHOME|FREEDOM|LOANCARE|NATIONSTAR|MR\.?\s*COOPER|WELLS\s*FARGO|BANK\s*OF\s*AMERICA|JPMORGAN|U\.?S\.?\s*BANK|PENNYMAC|NEWREZ|SHELLPOINT|CARRINGTON|SPECIALIZED|DEUTSCHE|WILMINGTON|MIDFIRST).*/i
+  ];
+  let clean = addr;
+  for (const p of lenderPatterns) {
+    clean = clean.replace(p, '');
+  }
+  // Also trim anything after a double space + word pattern that looks like a company
+  clean = clean.replace(/\s{2,}[A-Z][A-Z\s,\.]+(?:LLC|LP|INC|CORP|BANK|COMPANY|TRUST|ASSOCIATION).*$/i, '');
+  return clean.trim();
+}
+
+function hideLoading() {
+  const el = document.getElementById('loading-screen');
+  el.classList.add('fade-out');
+  setTimeout(() => el.style.display = 'none', 400);
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+/* ═══════════════════════════════════════════
+   RENDER ALL
+   ═══════════════════════════════════════════ */
+function renderAll() {
+  updateKPIs();
+  applyFilters();
+  renderCharts();
+  updateTimestamp();
+}
+
+/* ═══════════════════════════════════════════
+   KPI CARDS
+   ═══════════════════════════════════════════ */
+function updateKPIs() {
+  const total = allRecords.length;
+  const sold = allRecords.filter(r => r.status === 'sold').length;
+  const continued = allRecords.filter(r => r.status === 'continued').length;
+  const scheduled = allRecords.filter(r => r.status === 'scheduled').length;
+  const totalDue = allRecords.reduce((s, r) => s + (r.total_due || 0), 0);
+
+  document.getElementById('kpi-total').textContent = total.toLocaleString();
+  document.getElementById('kpi-continued').textContent = continued.toLocaleString();
+  document.getElementById('kpi-sold').textContent = sold.toLocaleString();
+  document.getElementById('kpi-scheduled').textContent = scheduled.toLocaleString();
+  document.getElementById('kpi-amount').textContent = formatCurrency(totalDue);
+
+  const counties = new Set(allRecords.map(r => r.county));
+  document.getElementById('kpi-total-sub').textContent =
+    counties.size === 1 ? 'Denver County' : `across ${counties.size} counties`;
+}
+
+function formatCurrency(n) {
+  if (n == null) return '—';
+  if (n >= 1e6) return '$' + (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return '$' + (n / 1e3).toFixed(0) + 'K';
+  return '$' + n.toLocaleString();
+}
+
+function formatCurrencyFull(n) {
+  if (n == null) return '—';
+  return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d + 'T00:00:00');
+  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/* ═══════════════════════════════════════════
+   FILTERS & SORT
+   ═══════════════════════════════════════════ */
+function applyFilters() {
+  const query = document.getElementById('filter-search').value.toLowerCase();
+  const status = document.getElementById('filter-status').value;
+  const source = document.getElementById('filter-source').value;
+
+  filteredRecords = allRecords.filter(r => {
+    if (status && r.status !== status) return false;
+    if (source && r.source !== source) return false;
+    if (query) {
+      const hay = [r.foreclosure_number, r.borrower_name, r.property_address, r.attorney]
+        .filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(query)) return false;
+    }
+    return true;
+  });
+
+  sortRecords();
+  renderTable();
+  document.getElementById('result-count').textContent =
+    filteredRecords.length + ' of ' + allRecords.length + ' filings';
+}
+
+function sortRecords() {
+  filteredRecords.sort((a, b) => {
+    let va = a[sortCol], vb = b[sortCol];
+    if (va == null) va = '';
+    if (vb == null) vb = '';
+    if (typeof va === 'number' && typeof vb === 'number') {
+      return sortAsc ? va - vb : vb - va;
+    }
+    va = String(va).toLowerCase();
+    vb = String(vb).toLowerCase();
+    return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+  });
+}
+
+/* ═══════════════════════════════════════════
+   TABLE RENDERING
+   ═══════════════════════════════════════════ */
+function renderTable() {
+  const tbody = document.getElementById('filings-body');
+  if (filteredRecords.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">📋</div><p>No filings match your filters</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = filteredRecords.map(r => `
+    <tr data-id="${r.id}" onclick="openDetail('${r.id}')">
+      <td data-label="Case #"><span class="mono">${esc(r.foreclosure_number)}</span></td>
+      <td data-label="Borrower">${esc(r.borrower_name || '—')}</td>
+      <td data-label="Address" class="address-cell">${esc(r.property_address || '—')}</td>
+      <td data-label="Amount Due"><span class="amount">${r.total_due ? formatCurrencyFull(r.total_due) : '—'}</span></td>
+      <td data-label="Sale Date">${formatDate(r.scheduled_sale_date)}</td>
+      <td data-label="Status">${statusBadge(r.status)}</td>
+    </tr>
+  `).join('');
+}
+
+function statusBadge(status) {
+  const cls = {
+    sold: 'badge-sold', continued: 'badge-continued',
+    scheduled: 'badge-scheduled', withdrawn: 'badge-withdrawn',
+    rrc: 'badge-rrc'
+  }[status] || 'badge-scheduled';
+  return `<span class="badge ${cls}">${esc(status || 'unknown')}</span>`;
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ═══════════════════════════════════════════
+   DETAIL PANEL
+   ═══════════════════════════════════════════ */
+function openDetail(id) {
+  const r = allRecords.find(x => x.id === id);
+  if (!r) return;
+  document.getElementById('detail-title').textContent = 'Case ' + r.foreclosure_number;
+
+  const sections = [
+    {
+      title: 'Property', rows: [
+        ['Address', r.property_address],
+        ['Legal Description', r.legal_description],
+        ['County', r.county ? r.county.charAt(0).toUpperCase() + r.county.slice(1) : '—'],
+      ]
+    },
+    {
+      title: 'Parties', rows: [
+        ['Borrower', r.borrower_name],
+        ['Original Lender', r.original_lender],
+        ['Foreclosing Entity', r.foreclosing_entity],
+        ['Attorney', r.attorney],
+        ['Attorney File #', r.attorney_file_number],
+      ]
+    },
+    {
+      title: 'Financial', rows: [
+        ['Original Loan Amount', r.original_loan_amount ? formatCurrencyFull(r.original_loan_amount) : null],
+        ['Principal Balance', r.principal_balance ? formatCurrencyFull(r.principal_balance) : null],
+        ['Total Due', r.total_due ? formatCurrencyFull(r.total_due) : null],
+        ['Deficiency', r.deficiency != null ? formatCurrencyFull(r.deficiency) : null],
+        ['Interest Rate', r.interest_rate ? r.interest_rate + '%' : null],
+        ['Winning Bid', r.winning_bid ? formatCurrencyFull(r.winning_bid) : null],
+        ['Winning Bidder', r.winning_bidder],
+      ]
+    },
+    {
+      title: 'Timeline', rows: [
+        ['NED Recorded', r.ned_recorded_date ? formatDate(r.ned_recorded_date) : null],
+        ['First Publication', r.first_publication_date ? formatDate(r.first_publication_date) : null],
+        ['Last Publication', r.last_publication_date ? formatDate(r.last_publication_date) : null],
+        ['Scheduled Sale', r.scheduled_sale_date ? formatDate(r.scheduled_sale_date) : null],
+        ['Sale Time', r.sale_time],
+      ]
+    },
+    {
+      title: 'Meta', rows: [
+        ['Status', r.status],
+        ['Source', r.source],
+        ['Reception #', r.reception_number],
+        ['Scraped', r.scraped_at ? new Date(r.scraped_at).toLocaleString() : null],
+      ]
+    }
+  ];
+
+  let html = '';
+  for (const section of sections) {
+    const visibleRows = section.rows.filter(([, v]) => v != null && v !== '' && v !== '—');
+    if (visibleRows.length === 0) continue;
+    html += `<div class="detail-section"><div class="detail-section-title">${section.title}</div>`;
+    for (const [label, value] of visibleRows) {
+      html += `<div class="detail-row"><span class="label">${label}</span><span class="value">${esc(String(value))}</span></div>`;
+    }
+    html += '</div>';
+  }
+
+  document.getElementById('detail-body').innerHTML = html;
+  document.getElementById('detail-overlay').classList.add('open');
+  document.getElementById('detail-panel').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDetail() {
+  document.getElementById('detail-overlay').classList.remove('open');
+  document.getElementById('detail-panel').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+/* ═══════════════════════════════════════════
+   CHARTS
+   ═══════════════════════════════════════════ */
+let chartStatus = null;
+let chartAmounts = null;
+
+function renderCharts() {
+  renderStatusChart();
+  renderAmountsChart();
+}
+
+function renderStatusChart() {
+  const counts = {};
+  allRecords.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+  const labels = Object.keys(counts);
+  const data = Object.values(counts);
+  const colors = labels.map(s => ({
+    sold: '#22c55e', continued: '#f0a030',
+    scheduled: '#4d8eff', withdrawn: '#a78bfa', rrc: '#ef4444'
+  }[s] || '#606078'));
+
+  if (chartStatus) chartStatus.destroy();
+  chartStatus = new Chart(document.getElementById('chart-status'), {
+    type: 'doughnut',
+    data: {
+      labels: labels.map(l => l.charAt(0).toUpperCase() + l.slice(1)),
+      datasets: [{ data, backgroundColor: colors, borderWidth: 0, hoverOffset: 6 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: '#9090a8', padding: 16, font: { family: 'Outfit', size: 12 } }
+        }
+      },
+      cutout: '60%'
+    }
+  });
+}
+
+function renderAmountsChart() {
+  // Bucket amounts into ranges
+  const buckets = { '$0-100K': 0, '$100K-200K': 0, '$200K-300K': 0, '$300K-500K': 0, '$500K+': 0, 'Unknown': 0 };
+  allRecords.forEach(r => {
+    const a = r.total_due || r.original_loan_amount;
+    if (a == null) { buckets['Unknown']++; return; }
+    if (a < 100000) buckets['$0-100K']++;
+    else if (a < 200000) buckets['$100K-200K']++;
+    else if (a < 300000) buckets['$200K-300K']++;
+    else if (a < 500000) buckets['$300K-500K']++;
+    else buckets['$500K+']++;
+  });
+
+  // Remove empty buckets
+  const entries = Object.entries(buckets).filter(([, v]) => v > 0);
+
+  if (chartAmounts) chartAmounts.destroy();
+  chartAmounts = new Chart(document.getElementById('chart-amounts'), {
+    type: 'bar',
+    data: {
+      labels: entries.map(([k]) => k),
+      datasets: [{
+        data: entries.map(([, v]) => v),
+        backgroundColor: '#4d8eff33',
+        borderColor: '#4d8eff',
+        borderWidth: 1,
+        borderRadius: 4,
+        barPercentage: 0.7
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: '#9090a8', font: { family: 'Outfit', size: 11 } },
+          grid: { display: false },
+          border: { color: '#2a2a3d' }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { color: '#9090a8', stepSize: 1, font: { family: 'Outfit', size: 11 } },
+          grid: { color: '#2a2a3d22' },
+          border: { color: '#2a2a3d' }
+        }
+      }
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════
+   TIMESTAMP
+   ═══════════════════════════════════════════ */
+function updateTimestamp() {
+  if (allRecords.length === 0) return;
+  const latest = allRecords.reduce((max, r) =>
+    r.scraped_at && r.scraped_at > max ? r.scraped_at : max, '');
+  if (latest) {
+    const dt = new Date(latest);
+    document.getElementById('last-updated').textContent =
+      'Updated ' + dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+      ' at ' + dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+}
+
+/* ═══════════════════════════════════════════
+   EVENT LISTENERS
+   ═══════════════════════════════════════════ */
+
+// Tabs
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// Filters
+document.getElementById('filter-search').addEventListener('input', applyFilters);
+document.getElementById('filter-status').addEventListener('change', applyFilters);
+document.getElementById('filter-source').addEventListener('change', applyFilters);
+
+// Sort
+document.querySelectorAll('thead th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.sort;
+    if (sortCol === col) { sortAsc = !sortAsc; }
+    else { sortCol = col; sortAsc = true; }
+    document.querySelectorAll('thead th').forEach(t => t.classList.remove('sorted'));
+    th.classList.add('sorted');
+    th.querySelector('.sort-arrow').textContent = sortAsc ? '▲' : '▼';
+    applyFilters();
+  });
+});
+
+// Detail panel close
+document.getElementById('detail-close').addEventListener('click', closeDetail);
+document.getElementById('detail-overlay').addEventListener('click', closeDetail);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+
+/* ═══════════════════════════════════════════
+   INIT
+   ═══════════════════════════════════════════ */
+loadData();
+</script>
+
+</body>
+</html>

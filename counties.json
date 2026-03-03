@@ -1,0 +1,10 @@
+{
+  "denver": {
+    "county_id": "denver",
+    "county_name": "Denver",
+    "display_name": "Denver",
+    "platform": "denver_custom",
+    "enabled": true,
+    "notes": "Uses PDF auction data + PublicSearch NED filings. No API keys needed. Zero cost."
+  }
+}
