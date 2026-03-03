@@ -7,6 +7,7 @@ import requests
 
 ADAPTERS = {
     "denver_custom": "scrapers.denver_adapter:DenverScraper",
+    "gts": "scrapers.gts_adapter:GTSScraper",
 }
 DATA_FILE = "foreclosure-data.json"
 CONFIG_FILE = "config/counties.json"
@@ -51,11 +52,9 @@ def clean_address_for_geocoding(addr):
     # Normalize whitespace
     clean = re.sub(r'\s+', ' ', clean).strip().rstrip(',')
 
-    # Ensure Denver, CO is present
+    # Ensure state is present for geocoding
     upper = clean.upper()
-    if 'DENVER' not in upper and 'CO ' not in upper and not re.search(r'\d{5}', clean):
-        clean += ', Denver, CO'
-    elif 'DENVER' in upper and ', CO' not in upper and 'COLORADO' not in upper:
+    if ', CO' not in upper and 'COLORADO' not in upper and not re.search(r'\d{5}', clean):
         clean += ', CO'
 
     return clean

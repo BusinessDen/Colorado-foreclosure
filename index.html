@@ -194,6 +194,11 @@ td.address-cell { max-width: 300px; }
 .badge-scheduled { background: rgba(59,130,246,0.15); color: #3b82f6; }
 .badge-withdrawn { background: rgba(156,39,176,0.15); color: #9c27b0; }
 .badge-rrc { background: rgba(232,84,84,0.15); color: #e85454; }
+.badge-intent_to_cure { background: rgba(251,146,60,0.15); color: #fb923c; }
+.badge-bankruptcy { background: rgba(239,68,68,0.15); color: #ef4444; }
+.badge-redeemed { background: rgba(34,197,94,0.15); color: #22c55e; }
+.badge-deeded { background: rgba(6,182,212,0.15); color: #06b6d4; }
+.badge-court_stayed { background: rgba(220,38,38,0.15); color: #dc2626; }
 
 /* ═══ DETAIL PANEL ═══ */
 .detail-overlay {
@@ -407,7 +412,7 @@ input[type="range"]::-webkit-slider-thumb {
     <div class="kpi-card blue" data-kpi="all">
       <div class="kpi-label">Total Filings</div>
       <div class="kpi-value" id="kpi-total">—</div>
-      <div class="kpi-sub" id="kpi-total-sub">Denver County</div>
+      <div class="kpi-sub" id="kpi-total-sub">all counties</div>
     </div>
     <div class="kpi-card amber" data-kpi="continued">
       <div class="kpi-label">Continued</div>
@@ -483,16 +488,17 @@ input[type="range"]::-webkit-slider-thumb {
       <input type="text" id="filter-search" placeholder="Search address, borrower, case #…">
       <select id="filter-status">
         <option value="">All Statuses</option>
+        <option value="scheduled">Scheduled</option>
         <option value="sold">Sold</option>
         <option value="continued">Continued</option>
-        <option value="active">Scheduled / Active</option>
         <option value="withdrawn">Withdrawn</option>
+        <option value="intent_to_cure">Intent to Cure</option>
+        <option value="bankruptcy">Bankruptcy</option>
+        <option value="redeemed">Redeemed</option>
+        <option value="deeded">Deeded</option>
       </select>
-      <select id="filter-source">
-        <option value="">All Sources</option>
-        <option value="bidgrid">Bid Grid</option>
-        <option value="continuances">Continuances</option>
-        <option value="sales_results">Sales Results</option>
+      <select id="filter-county">
+        <option value="">All Counties</option>
       </select>
       <span class="filter-label">Date:</span>
       <input type="date" id="filter-date-from" title="From (NED date)">
@@ -504,6 +510,7 @@ input[type="range"]::-webkit-slider-thumb {
       <table id="filings-table">
         <thead><tr>
           <th data-sort="foreclosure_number">Case # <span class="sort-arrow">▲</span></th>
+          <th data-sort="county">County <span class="sort-arrow">▲</span></th>
           <th data-sort="borrower_name">Borrower <span class="sort-arrow">▲</span></th>
           <th data-sort="property_address">Address <span class="sort-arrow">▲</span></th>
           <th data-sort="total_due">Amount Due <span class="sort-arrow">▲</span></th>
@@ -532,7 +539,7 @@ input[type="range"]::-webkit-slider-thumb {
 </div>
 
 <footer class="site-footer">
-  <span>Data sourced from Denver County Public Trustee public records</span>
+  <span>Data sourced from Colorado Public Trustee public records</span>
   <span>Updated daily at 5:00 AM MT</span>
 </footer>
 
@@ -550,7 +557,9 @@ let leafletMap = null;
 let mapMarkers = [];
 const STATUS_COLORS = {
   sold:'#4caf50', continued:'#f5a623', active:'#3b82f6',
-  scheduled:'#3b82f6', withdrawn:'#a78bfa', rrc:'#e85454', unknown:'#555'
+  scheduled:'#3b82f6', withdrawn:'#a78bfa', rrc:'#e85454',
+  intent_to_cure:'#fb923c', bankruptcy:'#ef4444', redeemed:'#22c55e',
+  deeded:'#06b6d4', court_stayed:'#dc2626', unknown:'#555'
 };
 
 /* ═══ LIVE TIMERS ═══ */
@@ -583,11 +592,23 @@ async function loadData() {
     allRecords = await resp.json();
     if (!Array.isArray(allRecords)) allRecords = [];
     allRecords.forEach(r => { if (r.property_address) r.property_address = cleanAddr(r.property_address); });
+    populateCountyDropdown();
     hideLoading();
     renderAll();
     tickTimers();
   } catch(e) { showError('Could not load data. '+e.message); hideLoading(); }
 }
+function populateCountyDropdown() {
+  const counties = [...new Set(allRecords.map(r=>r.county).filter(Boolean))].sort();
+  const sel = document.getElementById('filter-county');
+  counties.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase());
+    sel.appendChild(opt);
+  });
+}
+function countyLabel(c) { return c ? c.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase()) : '—'; }
 function cleanAddr(a) {
   a = a.replace(/\s+(AMERIHOME|FREEDOM|LOANCARE|NATIONSTAR|MR\.?\s*COOPER|WELLS\s*FARGO|BANK\s*OF\s*AMERICA|JPMORGAN|U\.?S\.?\s*BANK|PENNYMAC|NEWREZ|SHELLPOINT|CARRINGTON|SPECIALIZED|DEUTSCHE|WILMINGTON|MIDFIRST).*/i,'');
   return a.replace(/\s{2,}[A-Z][A-Z\s,\.]+(?:LLC|LP|INC|CORP|BANK|COMPANY|TRUST|ASSOCIATION).*$/i,'').trim();
@@ -615,7 +636,7 @@ function baseStatus(s) { return (s||'').startsWith('continued')?'continued':(s||
 function statusBadge(s) {
   if (!s) return '<span class="badge badge-scheduled">unknown</span>';
   const b = baseStatus(s);
-  const cls = {sold:'badge-sold',continued:'badge-continued',active:'badge-scheduled',scheduled:'badge-scheduled',withdrawn:'badge-withdrawn',rrc:'badge-rrc'}[b]||'badge-scheduled';
+  const cls = {sold:'badge-sold',continued:'badge-continued',active:'badge-scheduled',scheduled:'badge-scheduled',withdrawn:'badge-withdrawn',rrc:'badge-rrc',intent_to_cure:'badge-intent_to_cure',bankruptcy:'badge-bankruptcy',redeemed:'badge-redeemed',deeded:'badge-deeded',court_stayed:'badge-court_stayed'}[b]||'badge-scheduled';
   return `<span class="badge ${cls}">${esc(s)}</span>`;
 }
 
@@ -629,7 +650,9 @@ function updateKPIs() {
   const cont = r.filter(x=>(x.status||'').startsWith('continued')).length;
   const act = r.filter(x=>x.status==='active'||x.status==='scheduled').length;
   const total = r.reduce((s,x)=>s+(x.total_due||0),0);
+  const counties = new Set(r.map(x=>x.county).filter(Boolean)).size;
   document.getElementById('kpi-total').textContent = r.length.toLocaleString();
+  document.getElementById('kpi-total-sub').textContent = counties + ' count' + (counties!==1?'ies':'y');
   document.getElementById('kpi-continued').textContent = cont.toLocaleString();
   document.getElementById('kpi-sold').textContent = sold.toLocaleString();
   document.getElementById('kpi-active').textContent = act.toLocaleString();
@@ -668,7 +691,7 @@ function passesKpi(r) {
 function applyFilters() {
   const q = document.getElementById('filter-search').value.toLowerCase();
   const st = document.getElementById('filter-status').value;
-  const src = document.getElementById('filter-source').value;
+  const cty = document.getElementById('filter-county').value;
   const df = document.getElementById('filter-date-from').value;
   const dt = document.getElementById('filter-date-to').value;
 
@@ -678,9 +701,9 @@ function applyFilters() {
       if (st==='continued'){ if (!baseStatus(r.status).startsWith('continued')) return false; }
       else if (r.status!==st) return false;
     }
-    if (src && r.source!==src) return false;
+    if (cty && r.county!==cty) return false;
     if (q) {
-      const hay=[r.foreclosure_number,r.borrower_name,r.property_address,r.attorney].filter(Boolean).join(' ').toLowerCase();
+      const hay=[r.foreclosure_number,r.borrower_name,r.property_address,r.attorney,r.county].filter(Boolean).join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
     }
     if (df||dt) {
@@ -709,13 +732,14 @@ function sortRecords() {
 function renderTable() {
   const tb = document.getElementById('filings-body');
   if (!filteredRecords.length) {
-    tb.innerHTML='<tr><td colspan="7"><div class="empty-state"><div class="icon">📋</div><p>No filings match your filters</p></div></td></tr>';
+    tb.innerHTML='<tr><td colspan="8"><div class="empty-state"><div class="icon">📋</div><p>No filings match your filters</p></div></td></tr>';
     return;
   }
   tb.innerHTML = filteredRecords.map(r=>{
     const ned = r.ned_recorded_date ? (r.ned_estimated?'~':'')+fmtDate(r.ned_recorded_date) : '—';
     return `<tr onclick="openDetail('${r.id}')">
       <td data-label="Case #"><span class="mono">${esc(r.foreclosure_number)}</span></td>
+      <td data-label="County">${esc(countyLabel(r.county))}</td>
       <td data-label="Borrower">${esc(r.borrower_name||'—')}</td>
       <td data-label="Address" class="address-cell">${esc(r.property_address||'—')}</td>
       <td data-label="Amount Due"><span class="amount">${r.total_due?fmtCurFull(r.total_due):'—'}</span></td>
@@ -820,7 +844,7 @@ function renderTimelineChart() {
 /* ═══ MAP ═══ */
 function initMap() {
   if (leafletMap) return;
-  leafletMap = L.map('map-container',{center:[39.74,-104.95],zoom:11});
+  leafletMap = L.map('map-container',{center:[39.55,-105.0],zoom:8});
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
     attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19
   }).addTo(leafletMap);
@@ -851,6 +875,7 @@ function renderMapMarkers() {
     });
     const popup=`
       <div class="popup-title">${esc(r.foreclosure_number)}</div>
+      <div class="popup-row"><span class="popup-label">County</span><span class="popup-value">${esc(countyLabel(r.county))}</span></div>
       <div class="popup-row"><span class="popup-label">Borrower</span><span class="popup-value">${esc(r.borrower_name||'—')}</span></div>
       <div class="popup-row"><span class="popup-label">Address</span><span class="popup-value">${esc((r.property_address||'').split(/\s{2,}/)[0])}</span></div>
       ${r.total_due?`<div class="popup-row"><span class="popup-label">Amount Due</span><span class="popup-value" style="color:#f5a623">${fmtCurFull(r.total_due)}</span></div>`:''}
@@ -885,7 +910,7 @@ document.getElementById('show-all-btn').addEventListener('click',()=>setKpi(null
 // Filters
 document.getElementById('filter-search').addEventListener('input',applyFilters);
 document.getElementById('filter-status').addEventListener('change',applyFilters);
-document.getElementById('filter-source').addEventListener('change',applyFilters);
+document.getElementById('filter-county').addEventListener('change',applyFilters);
 document.getElementById('filter-date-from').addEventListener('change',applyFilters);
 document.getElementById('filter-date-to').addEventListener('change',applyFilters);
 
