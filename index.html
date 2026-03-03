@@ -405,7 +405,11 @@ td.address-cell {
   font-size: 0.85rem; font-weight: 600;
   margin-bottom: 16px;
 }
-canvas { width: 100% !important; }
+.chart-container {
+  position: relative;
+  height: 220px;
+  width: 100%;
+}
 
 /* ═══════════════════════════════════════════
    EMPTY STATE
@@ -572,11 +576,15 @@ canvas { width: 100% !important; }
     <div class="chart-grid">
       <div class="chart-card">
         <h3>Status Breakdown</h3>
-        <canvas id="chart-status" height="220"></canvas>
+        <div class="chart-container">
+        <canvas id="chart-status"></canvas>
+        </div>
       </div>
       <div class="chart-card">
         <h3>Amount Distribution</h3>
-        <canvas id="chart-amounts" height="220"></canvas>
+        <div class="chart-container">
+        <canvas id="chart-amounts"></canvas>
+        </div>
       </div>
     </div>
   </div>
