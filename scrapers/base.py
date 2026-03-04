@@ -186,6 +186,11 @@ def merge_records(existing, new_records):
             # Update non-null fields
             for key, val in new_dict.items():
                 if val is not None and key != "history":
+                    # If address changed, clear geocode failure so it retries
+                    if key == "property_address" and val != old.get("property_address"):
+                        old.pop("geocode_failed", None)
+                        old["latitude"] = None
+                        old["longitude"] = None
                     old[key] = val
             # Track history on status/sale changes
             if status_changed or sale_changed:

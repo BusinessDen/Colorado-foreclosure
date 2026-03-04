@@ -134,32 +134,57 @@ class GTSScraper(CountyScraper):
 
         return r.text
 
-    def _get_page(self, current_html: str, page_num: int) -> str:
+    def _detect_pager_style(self, html: str) -> str:
+        """Detect which paging mechanism this GTS instance uses.
+        
+        Returns:
+          'nav'  - TopPager/BottomPager nav links (Arapahoe, Douglas, Weld, El Paso)
+          'grid' - Grid control Page$N postback (Larimer, Boulder, Broomfield)
+          'none' - No paging detected
+        """
+        if "TopPager" in html or "BottomPager" in html:
+            return "nav"
+        # Check for Page$N pattern in grid postbacks
+        if re.search(r"Page\$\d+", html):
+            return "grid"
+        return "none"
+
+    def _get_page(self, current_html: str, page_num: int, pager_style: str = "nav") -> str:
         """Navigate to a specific page of results using __doPostBack."""
         fields = self._parse_form_fields(current_html)
 
-        # Find the actual pager event target from __doPostBack links
-        pager_targets = re.findall(
-            r"__doPostBack\('([^']*(?:Top|Bottom)Pager[^']*)'\s*,\s*''\)",
-            current_html
-        )
+        if pager_style == "grid":
+            # Grid-based paging: __EVENTTARGET = grid control, __EVENTARGUMENT = Page$N
+            grid_name = self._field("gvSearchResults")
+            fields["__EVENTTARGET"] = grid_name
+            fields["__EVENTARGUMENT"] = f"Page${page_num}"
+        else:
+            # Nav-based paging: __EVENTTARGET = TopPager$ctlNN$Page
+            pager_targets = re.findall(
+                r"__doPostBack\(&#39;([^&]*(?:Top|Bottom)Pager[^&]*)&#39;\s*,\s*&#39;&#39;\)",
+                current_html
+            )
+            # Also check unescaped form
+            if not pager_targets:
+                pager_targets = re.findall(
+                    r"__doPostBack\('([^']*(?:Top|Bottom)Pager[^']*)'\s*,\s*''\)",
+                    current_html
+                )
 
-        # Find the target for the desired page number
-        event_target = None
-        target_ctl = f"ctl{page_num - 1:02d}"
-        for t in pager_targets:
-            if target_ctl in t:
-                event_target = t
-                break
+            event_target = None
+            target_ctl = f"ctl{page_num - 1:02d}"
+            for t in pager_targets:
+                if target_ctl in t:
+                    event_target = t
+                    break
 
-        if not event_target:
-            # Construct from prefix
-            event_target = self._field(f"TopPager${target_ctl}$Page")
-            if "TopPager" not in current_html and "BottomPager" in current_html:
-                event_target = event_target.replace("TopPager", "BottomPager")
+            if not event_target:
+                event_target = self._field(f"TopPager${target_ctl}$Page")
+                if "TopPager" not in current_html and "BottomPager" in current_html:
+                    event_target = event_target.replace("TopPager", "BottomPager")
 
-        fields["__EVENTTARGET"] = event_target
-        fields["__EVENTARGUMENT"] = ""
+            fields["__EVENTTARGET"] = event_target
+            fields["__EVENTARGUMENT"] = ""
 
         # Remove button fields
         for key in list(fields.keys()):
@@ -333,6 +358,7 @@ class GTSScraper(CountyScraper):
 
     def _count_pages(self, html: str) -> int:
         """Count how many page links exist in the pager."""
+        # Style 1: Nav-based pager (Arapahoe, Douglas, etc.)
         pages = re.findall(r'aria-label="Goto page (\d+)"', html)
         if pages:
             max_visible = max(int(p) for p in pages)
@@ -343,6 +369,16 @@ class GTSScraper(CountyScraper):
         pager_links = re.findall(r'(?:Top|Bottom)Pager\$ctl(\d+)\$Page', html)
         if pager_links:
             return max(int(p) for p in pager_links) + 1
+
+        # Style 2: Grid-based pager (Larimer, Boulder, Broomfield)
+        # Look for Page$N patterns in __doPostBack calls
+        grid_pages = re.findall(r'Page\$(\d+)', html)
+        if grid_pages:
+            max_page = max(int(p) for p in grid_pages)
+            # If there's a Page$Last, there are more pages beyond what's visible
+            if 'Page$Last' in html:
+                return max_page + 5
+            return max_page
 
         return 1
 
@@ -376,10 +412,12 @@ class GTSScraper(CountyScraper):
             logger.info(f"  [{self.county}] Page 1: {len(page_records)} records (total: {total_str})")
 
             total_pages = self._count_pages(results_html)
+            pager_style = self._detect_pager_style(results_html)
+            logger.info(f"  [{self.county}] Pager: {pager_style}, est. {total_pages} pages")
             current_html = results_html
             for page in range(2, min(total_pages + 1, self.MAX_PAGES + 1)):
                 try:
-                    page_html = self._get_page(current_html, page)
+                    page_html = self._get_page(current_html, page, pager_style)
                     page_recs = self._parse_results(page_html)
                     if not page_recs:
                         logger.info(f"  [{self.county}] Page {page}: empty, stopping")
@@ -387,6 +425,11 @@ class GTSScraper(CountyScraper):
                     all_records.extend(page_recs)
                     logger.info(f"  [{self.county}] Page {page}: {len(page_recs)} records")
                     current_html = page_html
+                    # For grid-style paging, re-check page count as new pages may appear
+                    if pager_style == "grid":
+                        new_total = self._count_pages(page_html)
+                        if new_total > total_pages:
+                            total_pages = new_total
                 except Exception as e:
                     logger.warning(f"  [{self.county}] Page {page} failed: {e}")
                     break
