@@ -5,6 +5,86 @@
     "display_name": "Denver",
     "platform": "denver_custom",
     "enabled": true,
-    "notes": "Uses PDF auction data + PublicSearch NED filings. No API keys needed. Zero cost."
+    "notes": "Uses PDF auction data from denvergov.org. No API keys needed."
+  },
+  "arapahoe": {
+    "county_id": "arapahoe",
+    "county_name": "Arapahoe",
+    "display_name": "Arapahoe",
+    "platform": "gts",
+    "enabled": true,
+    "search_url": "https://foreclosuresearch.arapahoegov.com/foreclosure/",
+    "field_map": {},
+    "notes": "Standard GTS. 8 cols. Terms page. Auctions Wed 10am."
+  },
+  "el_paso": {
+    "county_id": "el_paso",
+    "county_name": "El Paso",
+    "display_name": "El Paso",
+    "platform": "gts",
+    "enabled": true,
+    "search_url": "https://elpasopublictrustee.com/GTSSearch",
+    "field_map": {},
+    "notes": "GTS via iframe. 6 cols (no sale date, no status). Auctions Wed 10am via RealAuction."
+  },
+  "jefferson": {
+    "county_id": "jefferson",
+    "county_name": "Jefferson",
+    "display_name": "Jefferson",
+    "platform": "gts",
+    "enabled": false,
+    "search_url": "https://gts.co.jefferson.co.us/foreclosure/",
+    "field_map": {},
+    "notes": "GTS site returning 503 as of 2026-03-03. Re-enable when server is back."
+  },
+  "douglas": {
+    "county_id": "douglas",
+    "county_name": "Douglas",
+    "display_name": "Douglas",
+    "platform": "gts",
+    "enabled": true,
+    "search_url": "https://apps.douglas.co.us/gts/",
+    "field_map": {},
+    "notes": "GTS. 8 cols. Terms page. FC# format: 6-digit (e.g. 260045). Auctions Wed."
+  },
+  "larimer": {
+    "county_id": "larimer",
+    "county_name": "Larimer",
+    "display_name": "Larimer",
+    "platform": "gts",
+    "enabled": true,
+    "search_url": "https://apps.larimer.org/publictrustee/search/",
+    "field_map": {},
+    "notes": "GTS. 7 cols (no sale date). ContentPlaceHolder1 prefix. RealForeclose auctions."
+  },
+  "weld": {
+    "county_id": "weld",
+    "county_name": "Weld",
+    "display_name": "Weld",
+    "platform": "gts",
+    "enabled": true,
+    "search_url": "https://gts.weld.gov/",
+    "field_map": {},
+    "notes": "GTS. 8 cols. Direct search (no terms). Auctions Wed 10am via RealAuction."
+  },
+  "boulder": {
+    "county_id": "boulder",
+    "county_name": "Boulder",
+    "display_name": "Boulder",
+    "platform": "gts",
+    "enabled": true,
+    "search_url": "https://www.bouldercountypt.org/GTSSearch",
+    "field_map": {},
+    "notes": "GTS via iframe. 7 cols (no sale date). Session URL. Auctions Wed."
+  },
+  "broomfield": {
+    "county_id": "broomfield",
+    "county_name": "Broomfield",
+    "display_name": "Broomfield",
+    "platform": "gts",
+    "enabled": true,
+    "search_url": "https://foreclosure.broomfield.org/",
+    "field_map": {},
+    "notes": "GTS. 7 cols (no sale date). ContentPlaceHolder1 prefix. Smallest county of the 10."
   }
 }
