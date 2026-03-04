@@ -2,6 +2,7 @@
 """Colorado Foreclosure Tracker - Main Scraper."""
 import sys, json, logging, time, re
 from pathlib import Path
+from datetime import datetime
 from scrapers.base import load_data, save_data, merge_records
 import requests
 
