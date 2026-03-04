@@ -310,7 +310,17 @@ td.address-cell { max-width: 300px; }
   display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
 }
 .map-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.8rem; color: #555; align-items: center; }
-.map-legend-item { display: flex; align-items: center; gap: 5px; }
+.map-legend-item {
+  display: flex; align-items: center; gap: 5px;
+  cursor: pointer; padding: 3px 8px; border-radius: 6px;
+  border: 1px solid transparent; transition: all 0.2s;
+  user-select: none;
+}
+.map-legend-item:hover { background: rgba(255,255,255,0.05); color: #c8cad0; }
+.map-legend-item.active {
+  background: rgba(255,255,255,0.08); border-color: #3b82f6;
+  color: #c8cad0; font-weight: 600;
+}
 .map-legend-dot {
   width: 10px; height: 10px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.3);
@@ -512,13 +522,13 @@ input[type="range"]::-webkit-slider-thumb {
         <input type="date" id="map-filter-date-to" title="To (NED date)">
       </div>
       <div class="map-legend-row">
-        <div class="map-legend">
+        <div class="map-legend" id="map-legend">
           <span class="slider-label">Value:</span>
-          <div class="map-legend-item"><div class="map-legend-dot" style="background:#3b82f6"></div> Unknown</div>
-          <div class="map-legend-item"><div class="map-legend-dot" style="background:#facc15"></div> &lt;$500K</div>
-          <div class="map-legend-item"><div class="map-legend-dot" style="background:#f97316"></div> $500K–$1M</div>
-          <div class="map-legend-item"><div class="map-legend-dot" style="background:#ef4444"></div> $1M–$2M</div>
-          <div class="map-legend-item"><div class="map-legend-dot" style="background:#ec4899"></div> $2M+</div>
+          <div class="map-legend-item" data-cat="unknown"><div class="map-legend-dot" style="background:#777"></div> Unknown</div>
+          <div class="map-legend-item" data-cat="low"><div class="map-legend-dot" style="background:#facc15"></div> &lt;$500K</div>
+          <div class="map-legend-item" data-cat="mid"><div class="map-legend-dot" style="background:#f97316"></div> $500K–$1M</div>
+          <div class="map-legend-item" data-cat="high"><div class="map-legend-dot" style="background:#ef4444"></div> $1M–$2M</div>
+          <div class="map-legend-item" data-cat="ultra"><div class="map-legend-dot" style="background:#ec4899"></div> $2M+</div>
         </div>
         <div class="slider-group">
           <span class="slider-label">Filter:</span>
@@ -895,9 +905,10 @@ function renderTimelineChart() {
 
 /* ═══ MAP ═══ */
 let clusterGroup = null;
+let legendFilter = null;  // null or 'unknown'|'low'|'mid'|'high'|'ultra'
 
 const VALUE_COLORS = {
-  unknown: '#3b82f6',   // Blue
+  unknown: '#777',      // Light grey
   low:     '#facc15',   // Yellow <$500K
   mid:     '#f97316',   // Orange $500K-$999K
   high:    '#ef4444',   // Red $1M-$1.99M
@@ -912,52 +923,58 @@ function valueCategory(r) {
   return 'ultra';
 }
 
-function createPieSvg(records, size) {
+function createDonutSvg(records, size) {
   const cats = {};
   records.forEach(r => { const c = valueCategory(r); cats[c] = (cats[c] || 0) + 1; });
   const total = records.length;
   const entries = Object.entries(cats);
-  const r = size / 2;
-  const cx = r, cy = r;
+  const cx = size / 2, cy = size / 2;
+  const outerR = size / 2 - 1;
+  const innerR = outerR * 0.55;  // donut hole = 55% of radius
 
-  // Single color: simple circle
+  let slices = '';
   if (entries.length === 1) {
-    const color = VALUE_COLORS[entries[0][0]];
-    if (total === 1) {
-      return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="${cx}" cy="${cy}" r="${r-1}" fill="${color}" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
-      </svg>`;
-    }
-    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="${cx}" cy="${cy}" r="${r-1}" fill="${color}" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
-      <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
-        fill="#fff" font-family="Outfit,sans-serif" font-weight="700"
-        font-size="${size < 30 ? 10 : 12}" style="text-shadow:0 1px 3px rgba(0,0,0,0.8)">${total}</text>
-    </svg>`;
+    slices = `<circle cx="${cx}" cy="${cy}" r="${(outerR + innerR) / 2}" fill="none"
+      stroke="${VALUE_COLORS[entries[0][0]]}" stroke-width="${outerR - innerR}" />`;
+  } else {
+    let startAngle = -Math.PI / 2;
+    entries.forEach(([cat, count]) => {
+      const sweep = (count / total) * 2 * Math.PI;
+      const endAngle = startAngle + sweep;
+      const largeArc = sweep > Math.PI ? 1 : 0;
+      const ox1 = cx + outerR * Math.cos(startAngle), oy1 = cy + outerR * Math.sin(startAngle);
+      const ox2 = cx + outerR * Math.cos(endAngle), oy2 = cy + outerR * Math.sin(endAngle);
+      const ix1 = cx + innerR * Math.cos(endAngle), iy1 = cy + innerR * Math.sin(endAngle);
+      const ix2 = cx + innerR * Math.cos(startAngle), iy2 = cy + innerR * Math.sin(startAngle);
+      slices += `<path d="M${ox1},${oy1} A${outerR},${outerR} 0 ${largeArc},1 ${ox2},${oy2}
+        L${ix1},${iy1} A${innerR},${innerR} 0 ${largeArc},0 ${ix2},${iy2} Z" fill="${VALUE_COLORS[cat]}" />`;
+      startAngle = endAngle;
+    });
   }
 
-  // Multi-color: pie chart
-  let startAngle = -Math.PI / 2;
-  let paths = '';
-  entries.forEach(([cat, count]) => {
-    const slice = (count / total) * 2 * Math.PI;
-    const endAngle = startAngle + slice;
-    const largeArc = slice > Math.PI ? 1 : 0;
-    const x1 = cx + (r-1) * Math.cos(startAngle);
-    const y1 = cy + (r-1) * Math.sin(startAngle);
-    const x2 = cx + (r-1) * Math.cos(endAngle);
-    const y2 = cy + (r-1) * Math.sin(endAngle);
-    paths += `<path d="M${cx},${cy} L${x1},${y1} A${r-1},${r-1} 0 ${largeArc},1 ${x2},${y2} Z" fill="${VALUE_COLORS[cat]}" />`;
-    startAngle = endAngle;
-  });
-
+  const showCount = total > 1;
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-    ${paths}
-    <circle cx="${cx}" cy="${cy}" r="${r-1}" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
-    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
+    ${slices}
+    ${showCount ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
       fill="#fff" font-family="Outfit,sans-serif" font-weight="700"
-      font-size="${size < 30 ? 10 : 12}" style="text-shadow:0 1px 3px rgba(0,0,0,0.8)">${total}</text>
+      font-size="${size < 28 ? 9 : size < 36 ? 11 : 13}" style="text-shadow:0 1px 3px rgba(0,0,0,0.9)">${total}</text>` : ''}
   </svg>`;
+}
+
+function createProportionalDot(count, color, maxCount) {
+  // When legend-filtered: solid circle sized proportionally
+  const minSize = 12, maxSize = 48;
+  const t = maxCount > 1 ? Math.sqrt((count - 1) / (maxCount - 1)) : 0;
+  const size = Math.round(minSize + t * (maxSize - minSize));
+  const cx = size / 2, cy = size / 2, r = size / 2 - 1;
+  const showCount = count > 1;
+  const svg = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" opacity="0.85" stroke="rgba(255,255,255,0.5)" stroke-width="1.5"/>
+    ${showCount ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
+      fill="#fff" font-family="Outfit,sans-serif" font-weight="700"
+      font-size="${size < 22 ? 9 : 11}" style="text-shadow:0 1px 3px rgba(0,0,0,0.9)">${count}</text>` : ''}
+  </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [size, size], iconAnchor: [size/2, size/2] });
 }
 
 function initMap() {
@@ -1012,6 +1029,8 @@ function getMapFilteredRecords() {
       if (df && ned < df) return false;
       if (dt && ned > dt) return false;
     }
+    // Legend filter
+    if (legendFilter && valueCategory(r) !== legendFilter) return false;
     return true;
   });
 }
@@ -1040,51 +1059,64 @@ function makePopup(r) {
     <div class="popup-row"><span class="popup-label">Status</span><span class="popup-value">${statusBadge(r.status)}</span></div>`;
 }
 
+function toggleLegendFilter(cat) {
+  legendFilter = (legendFilter === cat) ? null : cat;
+  document.querySelectorAll('.map-legend-item[data-cat]').forEach(el => {
+    el.classList.toggle('active', el.dataset.cat === legendFilter);
+  });
+  renderMapMarkers();
+}
+
 function renderMapMarkers() {
   if (!leafletMap) return;
 
-  // Remove old cluster group
   if (clusterGroup) {
     leafletMap.removeLayer(clusterGroup);
     clusterGroup = null;
   }
 
   const filtered = getMapFilteredRecords();
+  const isFiltered = !!legendFilter;
+  const filterColor = isFiltered ? VALUE_COLORS[legendFilter] : null;
 
   clusterGroup = L.markerClusterGroup({
-    maxClusterRadius: 45,
+    maxClusterRadius: 50,
     spiderfyOnMaxZoom: true,
     showCoverageOnHover: false,
     zoomToBoundsOnClick: true,
     iconCreateFunction: function(cluster) {
-      const childMarkers = cluster.getAllChildMarkers();
-      const records = childMarkers.map(m => m._fcRecord);
+      const children = cluster.getAllChildMarkers();
+      const records = children.map(m => m._fcRecord);
       const count = records.length;
-      const size = Math.min(24 + Math.sqrt(count) * 8, 56);
-      const svg = createPieSvg(records, size);
-      return L.divIcon({
-        html: svg,
-        className: '',
-        iconSize: [size, size],
-        iconAnchor: [size/2, size/2]
-      });
+
+      if (isFiltered) {
+        // Proportional solid dot
+        const maxInView = filtered.length;
+        return createProportionalDot(count, filterColor, Math.min(maxInView, 50));
+      }
+
+      // Donut chart
+      const size = Math.min(26 + Math.sqrt(count) * 7, 56);
+      const svg = createDonutSvg(records, size);
+      return L.divIcon({ html: svg, className: '', iconSize: [size, size], iconAnchor: [size/2, size/2] });
     }
   });
 
   const bounds = [];
   filtered.forEach(r => {
     const cat = valueCategory(r);
-    const color = VALUE_COLORS[cat];
+    const color = isFiltered ? filterColor : VALUE_COLORS[cat];
+    const dotSize = isFiltered ? 10 : 14;
     const icon = L.divIcon({
       className: '',
-      html: `<svg width="14" height="14" viewBox="0 0 14 14" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="7" cy="7" r="6" fill="${color}" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+      html: `<svg width="${dotSize}" height="${dotSize}" viewBox="0 0 ${dotSize} ${dotSize}" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="${dotSize/2}" cy="${dotSize/2}" r="${dotSize/2-1}" fill="${color}" stroke="rgba(255,255,255,0.5)" stroke-width="1.5"/>
       </svg>`,
-      iconSize: [14, 14], iconAnchor: [7, 7]
+      iconSize: [dotSize, dotSize], iconAnchor: [dotSize/2, dotSize/2]
     });
     const marker = L.marker([r.latitude, r.longitude], {icon})
       .bindPopup(makePopup(r), {maxWidth: 300});
-    marker._fcRecord = r;  // attach record for cluster icon
+    marker._fcRecord = r;
     clusterGroup.addLayer(marker);
     bounds.push([r.latitude, r.longitude]);
   });
@@ -1149,6 +1181,11 @@ document.getElementById('map-filter-status').addEventListener('change',renderMap
 document.getElementById('map-filter-county').addEventListener('change',renderMapMarkers);
 document.getElementById('map-filter-date-from').addEventListener('change',renderMapMarkers);
 document.getElementById('map-filter-date-to').addEventListener('change',renderMapMarkers);
+
+// Legend filter clicks
+document.querySelectorAll('.map-legend-item[data-cat]').forEach(el => {
+  el.addEventListener('click', () => toggleLegendFilter(el.dataset.cat));
+});
 
 // Detail
 document.getElementById('detail-close').addEventListener('click',closeDetail);
