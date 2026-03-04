@@ -281,10 +281,27 @@ td.address-cell { max-width: 300px; }
 
 /* Map controls */
 .map-controls {
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 12px;
+  display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px;
 }
-.map-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.8rem; color: #555; }
-.map-legend-item { display: flex; align-items: center; gap: 6px; }
+.map-filter-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.map-filter-bar input[type="text"] {
+  flex: 1; min-width: 140px; padding: 7px 12px;
+  background: #12131a; border: 1px solid #2a2d35; border-radius: 8px;
+  color: #c8cad0; font-size: 0.82rem; outline: none;
+}
+.map-filter-bar input[type="text"]:focus { border-color: #3b82f6; }
+.map-filter-bar select, .map-filter-bar input[type="date"] {
+  padding: 7px 10px; background: #12131a; border: 1px solid #2a2d35;
+  border-radius: 8px; color: #c8cad0; font-size: 0.82rem; outline: none;
+}
+.map-filter-bar select:focus, .map-filter-bar input[type="date"]:focus { border-color: #3b82f6; }
+.map-legend-row {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.map-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.8rem; color: #555; align-items: center; }
+.map-legend-item { display: flex; align-items: center; gap: 5px; }
 .map-legend-dot {
   width: 10px; height: 10px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.3);
@@ -464,19 +481,44 @@ input[type="range"]::-webkit-slider-thumb {
   <!-- Map -->
   <div class="tab-panel" id="panel-map">
     <div class="map-controls">
-      <div class="map-legend">
-        <div class="map-legend-item"><div class="map-legend-dot" style="background:#4caf50"></div> Sold</div>
-        <div class="map-legend-item"><div class="map-legend-dot" style="background:#f5a623"></div> Continued</div>
-        <div class="map-legend-item"><div class="map-legend-dot" style="background:#3b82f6"></div> Scheduled</div>
-        <div class="map-legend-item"><div class="map-legend-dot" style="background:#a78bfa"></div> Withdrawn</div>
-      </div>
-      <div class="slider-group">
-        <span class="slider-label">Value:</span>
-        <span class="slider-value" id="lbl-min">$0</span>
-        <input type="range" id="slider-min" min="0" max="1000000" step="10000" value="0">
+      <div class="map-filter-bar">
+        <input type="text" id="map-filter-search" placeholder="Search address, borrower, case #…">
+        <select id="map-filter-status">
+          <option value="">All Statuses</option>
+          <option value="scheduled">Scheduled</option>
+          <option value="sold">Sold</option>
+          <option value="continued">Continued</option>
+          <option value="withdrawn">Withdrawn</option>
+          <option value="intent_to_cure">Intent to Cure</option>
+          <option value="bankruptcy">Bankruptcy</option>
+          <option value="redeemed">Redeemed</option>
+          <option value="deeded">Deeded</option>
+        </select>
+        <select id="map-filter-county">
+          <option value="">All Counties</option>
+        </select>
+        <span class="filter-label">Date:</span>
+        <input type="date" id="map-filter-date-from" title="From (NED date)">
         <span class="filter-sep">–</span>
-        <input type="range" id="slider-max" min="0" max="1000000" step="10000" value="1000000">
-        <span class="slider-value" id="lbl-max">$1M+</span>
+        <input type="date" id="map-filter-date-to" title="To (NED date)">
+      </div>
+      <div class="map-legend-row">
+        <div class="map-legend">
+          <span class="slider-label">Value:</span>
+          <div class="map-legend-item"><div class="map-legend-dot" style="background:#3b82f6"></div> Unknown</div>
+          <div class="map-legend-item"><div class="map-legend-dot" style="background:#facc15"></div> &lt;$500K</div>
+          <div class="map-legend-item"><div class="map-legend-dot" style="background:#f97316"></div> $500K–$1M</div>
+          <div class="map-legend-item"><div class="map-legend-dot" style="background:#ef4444"></div> $1M–$2M</div>
+          <div class="map-legend-item"><div class="map-legend-dot" style="background:#ec4899"></div> $2M+</div>
+        </div>
+        <div class="slider-group">
+          <span class="slider-label">Filter:</span>
+          <span class="slider-value" id="lbl-min">$0</span>
+          <input type="range" id="slider-min" min="0" max="1000000" step="10000" value="0">
+          <span class="filter-sep">–</span>
+          <input type="range" id="slider-max" min="0" max="1000000" step="10000" value="1000000">
+          <span class="slider-value" id="lbl-max">$1M+</span>
+        </div>
       </div>
     </div>
     <div id="map-container"></div>
@@ -842,50 +884,220 @@ function renderTimelineChart() {
 }
 
 /* ═══ MAP ═══ */
+const VALUE_COLORS = {
+  unknown: '#3b82f6',   // Blue
+  low:     '#facc15',   // Yellow <$500K
+  mid:     '#f97316',   // Orange $500K-$999K
+  high:    '#ef4444',   // Red $1M-$1.99M
+  ultra:   '#ec4899',   // Neon Pink $2M+
+};
+function valueCategory(r) {
+  const amt = r.total_due || r.original_loan_amount;
+  if (amt == null || amt === 0) return 'unknown';
+  if (amt < 500000) return 'low';
+  if (amt < 1000000) return 'mid';
+  if (amt < 2000000) return 'high';
+  return 'ultra';
+}
+
 function initMap() {
   if (leafletMap) return;
   leafletMap = L.map('map-container',{center:[39.55,-105.0],zoom:8});
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
     attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19
   }).addTo(leafletMap);
+  populateMapCountyDropdown();
   renderMapMarkers();
+}
+
+function populateMapCountyDropdown() {
+  const counties = [...new Set(allRecords.map(r=>r.county).filter(Boolean))].sort();
+  const sel = document.getElementById('map-filter-county');
+  if (sel.options.length > 1) return; // already populated
+  counties.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase());
+    sel.appendChild(opt);
+  });
+}
+
+function getMapFilteredRecords() {
+  const q = document.getElementById('map-filter-search').value.toLowerCase();
+  const st = document.getElementById('map-filter-status').value;
+  const cty = document.getElementById('map-filter-county').value;
+  const df = document.getElementById('map-filter-date-from').value;
+  const dt = document.getElementById('map-filter-date-to').value;
+  const sMin = parseInt(document.getElementById('slider-min').value);
+  const sMax = parseInt(document.getElementById('slider-max').value);
+
+  return allRecords.filter(r => {
+    if (!r.latitude || !r.longitude) return false;
+    if (!passesKpi(r)) return false;
+    // Value slider
+    const amt = r.total_due || 0;
+    if (sMin > 0 && amt === 0) return false;
+    if (amt > 0 && (amt < sMin || amt > sMax)) return false;
+    // Status
+    if (st) {
+      if (st === 'continued') { if (!baseStatus(r.status).startsWith('continued')) return false; }
+      else if (r.status !== st) return false;
+    }
+    // County
+    if (cty && r.county !== cty) return false;
+    // Search
+    if (q) {
+      const hay = [r.foreclosure_number, r.borrower_name, r.property_address, r.attorney, r.county].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    // Date range (NED date)
+    if (df || dt) {
+      const ned = r.ned_recorded_date;
+      if (!ned) return false;
+      if (df && ned < df) return false;
+      if (dt && ned > dt) return false;
+    }
+    return true;
+  });
+}
+
+function clusterRecords(records, precision) {
+  const clusters = {};
+  records.forEach(r => {
+    const key = r.latitude.toFixed(precision) + ',' + r.longitude.toFixed(precision);
+    if (!clusters[key]) clusters[key] = [];
+    clusters[key].push(r);
+  });
+  return Object.values(clusters);
+}
+
+function createPieIcon(records, size) {
+  const cats = {};
+  records.forEach(r => {
+    const cat = valueCategory(r);
+    cats[cat] = (cats[cat] || 0) + 1;
+  });
+  const total = records.length;
+  const entries = Object.entries(cats);
+
+  // Single record: simple circle
+  if (total === 1) {
+    const color = VALUE_COLORS[entries[0][0]];
+    return L.divIcon({
+      className: '',
+      html: `<div style="width:${size}px;height:${size}px;background:${color};border:2px solid rgba(255,255,255,0.5);border-radius:50%;box-shadow:0 1px 6px rgba(0,0,0,0.5)"></div>`,
+      iconSize: [size, size], iconAnchor: [size/2, size/2]
+    });
+  }
+
+  // Multi: SVG pie chart
+  const r = size / 2;
+  const cx = r, cy = r;
+  let startAngle = -Math.PI / 2;
+  let paths = '';
+  entries.forEach(([cat, count]) => {
+    const slice = (count / total) * 2 * Math.PI;
+    const endAngle = startAngle + slice;
+    const largeArc = slice > Math.PI ? 1 : 0;
+    const x1 = cx + r * Math.cos(startAngle);
+    const y1 = cy + r * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(endAngle);
+    const y2 = cy + r * Math.sin(endAngle);
+    if (count === total) {
+      paths += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${VALUE_COLORS[cat]}" />`;
+    } else {
+      paths += `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${largeArc},1 ${x2},${y2} Z" fill="${VALUE_COLORS[cat]}" />`;
+    }
+    startAngle = endAngle;
+  });
+
+  const svg = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+    ${paths}
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
+      fill="#fff" font-family="Outfit,sans-serif" font-weight="700"
+      font-size="${size < 30 ? 10 : 12}" style="text-shadow:0 1px 3px rgba(0,0,0,0.8)">${total}</text>
+  </svg>`;
+
+  return L.divIcon({
+    className: '',
+    html: svg,
+    iconSize: [size, size], iconAnchor: [size/2, size/2]
+  });
+}
+
+function makeGoogleMapsUrl(addr) {
+  return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addr);
+}
+function makeStreetViewUrl(lat, lng) {
+  return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`;
 }
 
 function renderMapMarkers() {
   if (!leafletMap) return;
-  mapMarkers.forEach(m=>leafletMap.removeLayer(m));
-  mapMarkers=[];
-  const sMin = parseInt(document.getElementById('slider-min').value);
-  const sMax = parseInt(document.getElementById('slider-max').value);
-  const bounds=[];
-  allRecords.forEach(r=>{
-    if (!r.latitude||!r.longitude) return;
-    if (!passesKpi(r)) return;
-    // slider filter
-    const amt = r.total_due||0;
-    if (sMin > 0 && amt===0) return;
-    if (amt>0 && (amt<sMin || amt>sMax)) return;
+  mapMarkers.forEach(m => leafletMap.removeLayer(m));
+  mapMarkers = [];
 
-    const b = baseStatus(r.status);
-    const color = STATUS_COLORS[b]||'#555';
-    const icon = L.divIcon({
-      className:'',
-      html:`<div style="width:14px;height:14px;background:${color};border:2px solid rgba(255,255,255,0.4);border-radius:50%;box-shadow:0 1px 6px rgba(0,0,0,0.5)"></div>`,
-      iconSize:[14,14],iconAnchor:[7,7]
-    });
-    const popup=`
-      <div class="popup-title">${esc(r.foreclosure_number)}</div>
-      <div class="popup-row"><span class="popup-label">County</span><span class="popup-value">${esc(countyLabel(r.county))}</span></div>
-      <div class="popup-row"><span class="popup-label">Borrower</span><span class="popup-value">${esc(r.borrower_name||'—')}</span></div>
-      <div class="popup-row"><span class="popup-label">Address</span><span class="popup-value">${esc((r.property_address||'').split(/\s{2,}/)[0])}</span></div>
-      ${r.total_due?`<div class="popup-row"><span class="popup-label">Amount Due</span><span class="popup-value" style="color:#f5a623">${fmtCurFull(r.total_due)}</span></div>`:''}
-      ${r.scheduled_sale_date?`<div class="popup-row"><span class="popup-label">Sale Date</span><span class="popup-value">${fmtDate(r.scheduled_sale_date)}</span></div>`:''}
-      <div class="popup-row"><span class="popup-label">Status</span><span class="popup-value">${statusBadge(r.status)}</span></div>`;
-    const marker = L.marker([r.latitude,r.longitude],{icon}).bindPopup(popup,{maxWidth:280}).addTo(leafletMap);
+  const filtered = getMapFilteredRecords();
+  const bounds = [];
+
+  // Cluster by ~block level (4 decimal places ≈ 11m)
+  const clusters = clusterRecords(filtered, 4);
+
+  clusters.forEach(group => {
+    const avgLat = group.reduce((s, r) => s + r.latitude, 0) / group.length;
+    const avgLng = group.reduce((s, r) => s + r.longitude, 0) / group.length;
+    const size = group.length === 1 ? 14 : Math.min(18 + group.length * 3, 48);
+    const icon = createPieIcon(group, size);
+
+    let popupHtml;
+    if (group.length === 1) {
+      const r = group[0];
+      const cleanedAddr = (r.property_address || '').split(/\s{2,}/)[0];
+      const mapsUrl = makeGoogleMapsUrl(cleanedAddr + ', CO');
+      const svUrl = makeStreetViewUrl(r.latitude, r.longitude);
+      popupHtml = `
+        <div class="popup-title">${esc(r.foreclosure_number)}</div>
+        <div class="popup-row"><span class="popup-label">County</span><span class="popup-value">${esc(countyLabel(r.county))}</span></div>
+        <div class="popup-row"><span class="popup-label">Borrower</span><span class="popup-value">${esc(r.borrower_name || '—')}</span></div>
+        <div class="popup-row"><span class="popup-label">Address</span><span class="popup-value">
+          <a href="${mapsUrl}" target="_blank" rel="noopener" style="color:#3b82f6">${esc(cleanedAddr)}</a>
+          <a href="${svUrl}" target="_blank" rel="noopener" title="Street View" style="margin-left:6px;color:#facc15;font-size:1rem">🏠</a>
+        </span></div>
+        ${r.total_due ? `<div class="popup-row"><span class="popup-label">Amount Due</span><span class="popup-value" style="color:#f5a623">${fmtCurFull(r.total_due)}</span></div>` : ''}
+        ${r.scheduled_sale_date ? `<div class="popup-row"><span class="popup-label">Sale Date</span><span class="popup-value">${fmtDate(r.scheduled_sale_date)}</span></div>` : ''}
+        <div class="popup-row"><span class="popup-label">Status</span><span class="popup-value">${statusBadge(r.status)}</span></div>`;
+    } else {
+      // Cluster popup: summary + list
+      const cats = {};
+      group.forEach(r => { const c = valueCategory(r); cats[c] = (cats[c] || 0) + 1; });
+      const catLabels = {unknown:'Unknown',low:'<$500K',mid:'$500K–$1M',high:'$1M–$2M',ultra:'$2M+'};
+      let summary = Object.entries(cats).map(([c,n]) =>
+        `<span style="color:${VALUE_COLORS[c]};font-weight:600">${n}</span> ${catLabels[c]}`
+      ).join(' · ');
+      const items = group.slice(0, 5).map(r => {
+        const cleanedAddr = (r.property_address || '').split(/\s{2,}/)[0];
+        const mapsUrl = makeGoogleMapsUrl(cleanedAddr + ', CO');
+        return `<div class="popup-row" style="font-size:0.75rem">
+          <a href="${mapsUrl}" target="_blank" rel="noopener" style="color:#3b82f6">${esc(cleanedAddr.substring(0,35))}</a>
+          <span style="color:#f5a623">${r.total_due ? fmtCur(r.total_due) : '—'}</span>
+        </div>`;
+      }).join('');
+      const more = group.length > 5 ? `<div style="color:#555;font-size:0.72rem;margin-top:4px">+${group.length - 5} more</div>` : '';
+      popupHtml = `
+        <div class="popup-title">${group.length} Foreclosures</div>
+        <div style="font-size:0.78rem;margin-bottom:6px">${summary}</div>
+        ${items}${more}`;
+    }
+
+    const marker = L.marker([avgLat, avgLng], {icon})
+      .bindPopup(popupHtml, {maxWidth: 320})
+      .addTo(leafletMap);
     mapMarkers.push(marker);
-    bounds.push([r.latitude,r.longitude]);
+    bounds.push([avgLat, avgLng]);
   });
-  if (bounds.length) leafletMap.fitBounds(bounds,{padding:[30,30]});
+
+  if (bounds.length) leafletMap.fitBounds(bounds, {padding: [30, 30]});
 }
 
 /* ═══ EVENTS ═══ */
@@ -937,6 +1149,13 @@ function updateSliders() {
 }
 document.getElementById('slider-min').addEventListener('input',updateSliders);
 document.getElementById('slider-max').addEventListener('input',updateSliders);
+
+// Map filters
+document.getElementById('map-filter-search').addEventListener('input',renderMapMarkers);
+document.getElementById('map-filter-status').addEventListener('change',renderMapMarkers);
+document.getElementById('map-filter-county').addEventListener('change',renderMapMarkers);
+document.getElementById('map-filter-date-from').addEventListener('change',renderMapMarkers);
+document.getElementById('map-filter-date-to').addEventListener('change',renderMapMarkers);
 
 // Detail
 document.getElementById('detail-close').addEventListener('click',closeDetail);
