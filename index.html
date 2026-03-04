@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
 <style>
 /* ═══ RESET ═══ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -278,6 +280,13 @@ td.address-cell { max-width: 300px; }
 }
 .leaflet-control-attribution a { color: #3b82f6 !important; }
 .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(1.1) saturate(0.3); }
+/* Override MarkerCluster default styles - we use custom pie SVGs */
+.marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
+  background: none !important; border: none !important;
+}
+.marker-cluster-small div, .marker-cluster-medium div, .marker-cluster-large div {
+  background: none !important; border: none !important;
+}
 
 /* Map controls */
 .map-controls {
@@ -586,6 +595,7 @@ input[type="range"]::-webkit-slider-thumb {
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 /* ═══ STATE ═══ */
@@ -884,6 +894,8 @@ function renderTimelineChart() {
 }
 
 /* ═══ MAP ═══ */
+let clusterGroup = null;
+
 const VALUE_COLORS = {
   unknown: '#3b82f6',   // Blue
   low:     '#facc15',   // Yellow <$500K
@@ -900,6 +912,54 @@ function valueCategory(r) {
   return 'ultra';
 }
 
+function createPieSvg(records, size) {
+  const cats = {};
+  records.forEach(r => { const c = valueCategory(r); cats[c] = (cats[c] || 0) + 1; });
+  const total = records.length;
+  const entries = Object.entries(cats);
+  const r = size / 2;
+  const cx = r, cy = r;
+
+  // Single color: simple circle
+  if (entries.length === 1) {
+    const color = VALUE_COLORS[entries[0][0]];
+    if (total === 1) {
+      return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="${cx}" cy="${cy}" r="${r-1}" fill="${color}" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+      </svg>`;
+    }
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="${cx}" cy="${cy}" r="${r-1}" fill="${color}" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+      <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
+        fill="#fff" font-family="Outfit,sans-serif" font-weight="700"
+        font-size="${size < 30 ? 10 : 12}" style="text-shadow:0 1px 3px rgba(0,0,0,0.8)">${total}</text>
+    </svg>`;
+  }
+
+  // Multi-color: pie chart
+  let startAngle = -Math.PI / 2;
+  let paths = '';
+  entries.forEach(([cat, count]) => {
+    const slice = (count / total) * 2 * Math.PI;
+    const endAngle = startAngle + slice;
+    const largeArc = slice > Math.PI ? 1 : 0;
+    const x1 = cx + (r-1) * Math.cos(startAngle);
+    const y1 = cy + (r-1) * Math.sin(startAngle);
+    const x2 = cx + (r-1) * Math.cos(endAngle);
+    const y2 = cy + (r-1) * Math.sin(endAngle);
+    paths += `<path d="M${cx},${cy} L${x1},${y1} A${r-1},${r-1} 0 ${largeArc},1 ${x2},${y2} Z" fill="${VALUE_COLORS[cat]}" />`;
+    startAngle = endAngle;
+  });
+
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+    ${paths}
+    <circle cx="${cx}" cy="${cy}" r="${r-1}" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
+      fill="#fff" font-family="Outfit,sans-serif" font-weight="700"
+      font-size="${size < 30 ? 10 : 12}" style="text-shadow:0 1px 3px rgba(0,0,0,0.8)">${total}</text>
+  </svg>`;
+}
+
 function initMap() {
   if (leafletMap) return;
   leafletMap = L.map('map-container',{center:[39.55,-105.0],zoom:8});
@@ -913,7 +973,7 @@ function initMap() {
 function populateMapCountyDropdown() {
   const counties = [...new Set(allRecords.map(r=>r.county).filter(Boolean))].sort();
   const sel = document.getElementById('map-filter-county');
-  if (sel.options.length > 1) return; // already populated
+  if (sel.options.length > 1) return;
   counties.forEach(c => {
     const opt = document.createElement('option');
     opt.value = c;
@@ -934,23 +994,18 @@ function getMapFilteredRecords() {
   return allRecords.filter(r => {
     if (!r.latitude || !r.longitude) return false;
     if (!passesKpi(r)) return false;
-    // Value slider
     const amt = r.total_due || 0;
     if (sMin > 0 && amt === 0) return false;
     if (amt > 0 && (amt < sMin || amt > sMax)) return false;
-    // Status
     if (st) {
       if (st === 'continued') { if (!baseStatus(r.status).startsWith('continued')) return false; }
       else if (r.status !== st) return false;
     }
-    // County
     if (cty && r.county !== cty) return false;
-    // Search
     if (q) {
       const hay = [r.foreclosure_number, r.borrower_name, r.property_address, r.attorney, r.county].filter(Boolean).join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
     }
-    // Date range (NED date)
     if (df || dt) {
       const ned = r.ned_recorded_date;
       if (!ned) return false;
@@ -961,71 +1016,6 @@ function getMapFilteredRecords() {
   });
 }
 
-function clusterRecords(records, precision) {
-  const clusters = {};
-  records.forEach(r => {
-    const key = r.latitude.toFixed(precision) + ',' + r.longitude.toFixed(precision);
-    if (!clusters[key]) clusters[key] = [];
-    clusters[key].push(r);
-  });
-  return Object.values(clusters);
-}
-
-function createPieIcon(records, size) {
-  const cats = {};
-  records.forEach(r => {
-    const cat = valueCategory(r);
-    cats[cat] = (cats[cat] || 0) + 1;
-  });
-  const total = records.length;
-  const entries = Object.entries(cats);
-
-  // Single record: simple circle
-  if (total === 1) {
-    const color = VALUE_COLORS[entries[0][0]];
-    return L.divIcon({
-      className: '',
-      html: `<div style="width:${size}px;height:${size}px;background:${color};border:2px solid rgba(255,255,255,0.5);border-radius:50%;box-shadow:0 1px 6px rgba(0,0,0,0.5)"></div>`,
-      iconSize: [size, size], iconAnchor: [size/2, size/2]
-    });
-  }
-
-  // Multi: SVG pie chart
-  const r = size / 2;
-  const cx = r, cy = r;
-  let startAngle = -Math.PI / 2;
-  let paths = '';
-  entries.forEach(([cat, count]) => {
-    const slice = (count / total) * 2 * Math.PI;
-    const endAngle = startAngle + slice;
-    const largeArc = slice > Math.PI ? 1 : 0;
-    const x1 = cx + r * Math.cos(startAngle);
-    const y1 = cy + r * Math.sin(startAngle);
-    const x2 = cx + r * Math.cos(endAngle);
-    const y2 = cy + r * Math.sin(endAngle);
-    if (count === total) {
-      paths += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${VALUE_COLORS[cat]}" />`;
-    } else {
-      paths += `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${largeArc},1 ${x2},${y2} Z" fill="${VALUE_COLORS[cat]}" />`;
-    }
-    startAngle = endAngle;
-  });
-
-  const svg = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-    ${paths}
-    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
-    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
-      fill="#fff" font-family="Outfit,sans-serif" font-weight="700"
-      font-size="${size < 30 ? 10 : 12}" style="text-shadow:0 1px 3px rgba(0,0,0,0.8)">${total}</text>
-  </svg>`;
-
-  return L.divIcon({
-    className: '',
-    html: svg,
-    iconSize: [size, size], iconAnchor: [size/2, size/2]
-  });
-}
-
 function makeGoogleMapsUrl(addr) {
   return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addr);
 }
@@ -1033,70 +1023,73 @@ function makeStreetViewUrl(lat, lng) {
   return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`;
 }
 
+function makePopup(r) {
+  const cleanedAddr = (r.property_address || '').split(/\s{2,}/)[0];
+  const mapsUrl = makeGoogleMapsUrl(cleanedAddr + ', CO');
+  const svUrl = makeStreetViewUrl(r.latitude, r.longitude);
+  return `
+    <div class="popup-title">${esc(r.foreclosure_number)}</div>
+    <div class="popup-row"><span class="popup-label">County</span><span class="popup-value">${esc(countyLabel(r.county))}</span></div>
+    <div class="popup-row"><span class="popup-label">Borrower</span><span class="popup-value">${esc(r.borrower_name || '—')}</span></div>
+    <div class="popup-row"><span class="popup-label">Address</span><span class="popup-value">
+      <a href="${mapsUrl}" target="_blank" rel="noopener" style="color:#3b82f6">${esc(cleanedAddr)}</a>
+      <a href="${svUrl}" target="_blank" rel="noopener" title="Street View" style="margin-left:6px;color:#facc15;font-size:1rem">🏠</a>
+    </span></div>
+    ${r.total_due ? `<div class="popup-row"><span class="popup-label">Amount Due</span><span class="popup-value" style="color:#f5a623">${fmtCurFull(r.total_due)}</span></div>` : ''}
+    ${r.scheduled_sale_date ? `<div class="popup-row"><span class="popup-label">Sale Date</span><span class="popup-value">${fmtDate(r.scheduled_sale_date)}</span></div>` : ''}
+    <div class="popup-row"><span class="popup-label">Status</span><span class="popup-value">${statusBadge(r.status)}</span></div>`;
+}
+
 function renderMapMarkers() {
   if (!leafletMap) return;
-  mapMarkers.forEach(m => leafletMap.removeLayer(m));
-  mapMarkers = [];
+
+  // Remove old cluster group
+  if (clusterGroup) {
+    leafletMap.removeLayer(clusterGroup);
+    clusterGroup = null;
+  }
 
   const filtered = getMapFilteredRecords();
-  const bounds = [];
 
-  // Cluster by ~block level (4 decimal places ≈ 11m)
-  const clusters = clusterRecords(filtered, 4);
-
-  clusters.forEach(group => {
-    const avgLat = group.reduce((s, r) => s + r.latitude, 0) / group.length;
-    const avgLng = group.reduce((s, r) => s + r.longitude, 0) / group.length;
-    const size = group.length === 1 ? 14 : Math.min(18 + group.length * 3, 48);
-    const icon = createPieIcon(group, size);
-
-    let popupHtml;
-    if (group.length === 1) {
-      const r = group[0];
-      const cleanedAddr = (r.property_address || '').split(/\s{2,}/)[0];
-      const mapsUrl = makeGoogleMapsUrl(cleanedAddr + ', CO');
-      const svUrl = makeStreetViewUrl(r.latitude, r.longitude);
-      popupHtml = `
-        <div class="popup-title">${esc(r.foreclosure_number)}</div>
-        <div class="popup-row"><span class="popup-label">County</span><span class="popup-value">${esc(countyLabel(r.county))}</span></div>
-        <div class="popup-row"><span class="popup-label">Borrower</span><span class="popup-value">${esc(r.borrower_name || '—')}</span></div>
-        <div class="popup-row"><span class="popup-label">Address</span><span class="popup-value">
-          <a href="${mapsUrl}" target="_blank" rel="noopener" style="color:#3b82f6">${esc(cleanedAddr)}</a>
-          <a href="${svUrl}" target="_blank" rel="noopener" title="Street View" style="margin-left:6px;color:#facc15;font-size:1rem">🏠</a>
-        </span></div>
-        ${r.total_due ? `<div class="popup-row"><span class="popup-label">Amount Due</span><span class="popup-value" style="color:#f5a623">${fmtCurFull(r.total_due)}</span></div>` : ''}
-        ${r.scheduled_sale_date ? `<div class="popup-row"><span class="popup-label">Sale Date</span><span class="popup-value">${fmtDate(r.scheduled_sale_date)}</span></div>` : ''}
-        <div class="popup-row"><span class="popup-label">Status</span><span class="popup-value">${statusBadge(r.status)}</span></div>`;
-    } else {
-      // Cluster popup: summary + list
-      const cats = {};
-      group.forEach(r => { const c = valueCategory(r); cats[c] = (cats[c] || 0) + 1; });
-      const catLabels = {unknown:'Unknown',low:'<$500K',mid:'$500K–$1M',high:'$1M–$2M',ultra:'$2M+'};
-      let summary = Object.entries(cats).map(([c,n]) =>
-        `<span style="color:${VALUE_COLORS[c]};font-weight:600">${n}</span> ${catLabels[c]}`
-      ).join(' · ');
-      const items = group.slice(0, 5).map(r => {
-        const cleanedAddr = (r.property_address || '').split(/\s{2,}/)[0];
-        const mapsUrl = makeGoogleMapsUrl(cleanedAddr + ', CO');
-        return `<div class="popup-row" style="font-size:0.75rem">
-          <a href="${mapsUrl}" target="_blank" rel="noopener" style="color:#3b82f6">${esc(cleanedAddr.substring(0,35))}</a>
-          <span style="color:#f5a623">${r.total_due ? fmtCur(r.total_due) : '—'}</span>
-        </div>`;
-      }).join('');
-      const more = group.length > 5 ? `<div style="color:#555;font-size:0.72rem;margin-top:4px">+${group.length - 5} more</div>` : '';
-      popupHtml = `
-        <div class="popup-title">${group.length} Foreclosures</div>
-        <div style="font-size:0.78rem;margin-bottom:6px">${summary}</div>
-        ${items}${more}`;
+  clusterGroup = L.markerClusterGroup({
+    maxClusterRadius: 45,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    zoomToBoundsOnClick: true,
+    iconCreateFunction: function(cluster) {
+      const childMarkers = cluster.getAllChildMarkers();
+      const records = childMarkers.map(m => m._fcRecord);
+      const count = records.length;
+      const size = Math.min(24 + Math.sqrt(count) * 8, 56);
+      const svg = createPieSvg(records, size);
+      return L.divIcon({
+        html: svg,
+        className: '',
+        iconSize: [size, size],
+        iconAnchor: [size/2, size/2]
+      });
     }
-
-    const marker = L.marker([avgLat, avgLng], {icon})
-      .bindPopup(popupHtml, {maxWidth: 320})
-      .addTo(leafletMap);
-    mapMarkers.push(marker);
-    bounds.push([avgLat, avgLng]);
   });
 
+  const bounds = [];
+  filtered.forEach(r => {
+    const cat = valueCategory(r);
+    const color = VALUE_COLORS[cat];
+    const icon = L.divIcon({
+      className: '',
+      html: `<svg width="14" height="14" viewBox="0 0 14 14" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="7" cy="7" r="6" fill="${color}" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+      </svg>`,
+      iconSize: [14, 14], iconAnchor: [7, 7]
+    });
+    const marker = L.marker([r.latitude, r.longitude], {icon})
+      .bindPopup(makePopup(r), {maxWidth: 300});
+    marker._fcRecord = r;  // attach record for cluster icon
+    clusterGroup.addLayer(marker);
+    bounds.push([r.latitude, r.longitude]);
+  });
+
+  leafletMap.addLayer(clusterGroup);
   if (bounds.length) leafletMap.fitBounds(bounds, {padding: [30, 30]});
 }
 
