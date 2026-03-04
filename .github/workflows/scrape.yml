@@ -62,10 +62,13 @@ jobs:
         if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
       - name: Pull latest
         if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
-        run: git pull origin main
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
       - name: Set up Python
         if: steps.dst_check.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/setup-python@v5
