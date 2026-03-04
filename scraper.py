@@ -131,6 +131,7 @@ def main():
     existing = load_data(str(data_path))
     logger.info(f"Loaded {len(existing)} existing records")
     all_new = []
+    logger.info(f"Counties to process: {list(counties.keys())}")
     for cid, cfg in counties.items():
         if not cfg.get("enabled", True): continue
         if filt and cid != filt: continue
