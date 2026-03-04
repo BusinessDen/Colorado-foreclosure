@@ -126,19 +126,41 @@ class CountyScraper(ABC):
     def now_iso(self) -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    MAX_RETRIES = 3
+
     def throttled_get(self, url: str, **kwargs):
-        time.sleep(self.REQUEST_DELAY)
-        logger.debug(f"GET {url}")
-        resp = self.session.get(url, timeout=30, **kwargs)
-        resp.raise_for_status()
-        return resp
+        kwargs.setdefault("timeout", 30)
+        for attempt in range(1, self.MAX_RETRIES + 1):
+            time.sleep(self.REQUEST_DELAY)
+            logger.debug(f"GET {url} (attempt {attempt})")
+            try:
+                resp = self.session.get(url, **kwargs)
+                resp.raise_for_status()
+                return resp
+            except (requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout) as e:
+                if attempt == self.MAX_RETRIES:
+                    raise
+                wait = 5 * attempt
+                logger.warning(f"  GET {url} failed (attempt {attempt}): {e}, retrying in {wait}s")
+                time.sleep(wait)
 
     def throttled_post(self, url: str, **kwargs):
-        time.sleep(self.REQUEST_DELAY)
-        logger.debug(f"POST {url}")
-        resp = self.session.post(url, timeout=30, **kwargs)
-        resp.raise_for_status()
-        return resp
+        kwargs.setdefault("timeout", 30)
+        for attempt in range(1, self.MAX_RETRIES + 1):
+            time.sleep(self.REQUEST_DELAY)
+            logger.debug(f"POST {url} (attempt {attempt})")
+            try:
+                resp = self.session.post(url, **kwargs)
+                resp.raise_for_status()
+                return resp
+            except (requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout) as e:
+                if attempt == self.MAX_RETRIES:
+                    raise
+                wait = 5 * attempt
+                logger.warning(f"  POST {url} failed (attempt {attempt}): {e}, retrying in {wait}s")
+                time.sleep(wait)
 
 
 def merge_records(existing, new_records):

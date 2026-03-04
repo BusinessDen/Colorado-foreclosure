@@ -36,6 +36,7 @@ class GTSScraper(CountyScraper):
 
     ROWS_PER_PAGE = 25
     MAX_PAGES = 80
+    REQUEST_DELAY = 2.5  # Slightly longer than default to be respectful
 
     def __init__(self, county_config: dict):
         super().__init__(county_config)
@@ -76,7 +77,7 @@ class GTSScraper(CountyScraper):
     def _accept_terms(self) -> str:
         """Navigate to the search page, accept terms if present."""
         logger.info(f"  [{self.county}] Fetching {self.base_url}")
-        r1 = self.throttled_get(self.base_url)
+        r1 = self.throttled_get(self.base_url, timeout=(15, 60))
         html = r1.text
         self.actual_url = r1.url  # May have redirected (session ID, etc)
 
